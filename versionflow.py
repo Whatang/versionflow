@@ -6,6 +6,7 @@ import bumpversion
 import click
 import pkg_resources
 import setuptools_scm
+import git
 
 try:
     # Try to get version number from repository
@@ -52,34 +53,43 @@ def init(config):
 @click.pass_obj
 def patch(config):
     "Create a release with the patch number bumped."
-    Processor(config, "patch", GITFLOW_RELEASE).process()
+    Processor.from_config(config, "patch", GITFLOW_RELEASE).process()
 
 
 @cli.command()
 @click.pass_obj
 def minor(config):
     "Create a release with the minor number bumped."
-    Processor(config, "minor", GITFLOW_RELEASE).process()
+    Processor.from_config(config, "minor", GITFLOW_RELEASE).process()
 
 
 @cli.command()
 @click.pass_obj
 def major(config):
     "Create a release with the major number bumped."
-    Processor(config, "major", GITFLOW_RELEASE).process()
+    Processor.from_config(config, "major", GITFLOW_RELEASE).process()
 
 
 @attr.s
 class Processor(object):
+    repo = attr.ib()
     config = attr.ib()
     part = attr.ib(validator=attr.validators.in_(["patch", "minor", "major"]))
     flow_type = attr.ib(validator=attr.validators.in_(
         [GITFLOW_RELEASE, GITFLOW_HOTFIX]))
     setup_cfg_path = attr.ib(default="setup.cfg")
 
+    @classmethod
+    def from_config(cls, config, part, flow_type):
+        if config.repo_dir:
+            os.chdir(config.repo_dir)
+        try:
+            return cls(repo=git.Repo(), config=config, part=part, flow_type=flow_type)
+        except git.InvalidGitRepositoryError:
+            click.echo("No git repo here", err=False)
+            raise click.Abort()
+
     def process(self):
-        if self.config.repo_dir:
-            os.chdir(self.config.repo_dir)
         versions = Versions.from_bumpversion(self)
         self._gitflow_start(versions)
         self._bump_and_commit(versions)
@@ -101,37 +111,32 @@ class Processor(object):
             click.echo(exc.output, err=True)
             raise click.Abort()
 
+    @staticmethod
+    def _git_failure(message, exc):
+        click.echo(message, err=True)
+        click.echo("{command} returned status {status}".format(
+            command=exc.command, status=exc.status), err=True)
+        click.echo(exc.stdout, err=True)
+        click.echo(exc.stderr, err=True)
+        raise click.Abort()
+
     def _gitflow_start(self, versions):
         try:
-            self._gitflow(["start", versions.new_version])
-        except subprocess.CalledProcessError as exc:
-            # Handle gitflow failures
-            click.echo("Failed to start the release", err=True)
-            click.echo(exc.output, err=True)
-            raise click.Abort()
+            self.repo.git.flow(self.flow_type, "start", versions.new_version)
+        except git.GitCommandError as exc:
+            self._git_failure("Failed to start the release", exc)
 
     def _gitflow_end(self, versions):
         try:
-            self._gitflow(
-                ["finish",
-                 "-m", "Merging release/{release_version}".format(
-                     release_version=versions.new_version),
-                 "--force_delete",
-                 "--tag", "v{release_version}".format(
-                     release_version=versions.new_version),
-                 versions.new_version],
-                env={"GIT_MERGE_AUTOEDIT": "no"})
-        except subprocess.CalledProcessError as exc:
-            # Handle gitflow failures
-            click.echo("Failed to finish merging the release", err=True)
-            click.echo(exc.output, err=True)
-            raise click.Abort()
-
-    def _gitflow(self, gf_args, **subprocess_kw_args):
-        return subprocess.check_output(
-            ["git", "flow", self.flow_type] + gf_args,
-            stderr=subprocess.STDOUT,
-            **subprocess_kw_args)
+            with self.repo.git.custom_environment(GIT_MERGE_AUTOEDIT="no"):
+                self.repo.git.flow(self.flow_type, "finish",
+                                   versions.new_version,
+                                   "--message="+versions.release_merge_message(),
+                                   "--force_delete",
+                                   "--tag="+versions.release_version_string(),
+                                   )
+        except git.GitCommandError as exc:
+            self._git_failure("Failed to complete the release", exc)
 
 
 @attr.s
@@ -166,6 +171,12 @@ class Versions(object):
             click.echo("Failed to get version numbers", err=True)
             click.echo(exc.output, err=True)
             raise click.Abort()
+
+    def release_version_string(self):
+        return "v{version}".format(version=self.new_version)
+
+    def release_merge_message(self):
+        return "Merging release/{version}".format(version=self.new_version)
 
 
 if __name__ == "__main__":
