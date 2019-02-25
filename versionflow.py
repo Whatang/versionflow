@@ -110,7 +110,12 @@ class Processor(object):
     @classmethod
     def from_config(cls, config, part, flow_type):
         try:
-            return cls(repo=git.Repo(), config=config, part=part, flow_type=flow_type)
+            repo = git.Repo(config.repo_dir)
+            if repo.is_dirty():
+                click.echo(
+                    "versionflow can only run on a clean repo - -- check everything in first!", err=True)
+                raise click.Abort()
+            return cls(repo=repo, config=config, part=part, flow_type=flow_type)
         except git.InvalidGitRepositoryError:
             click.echo("No git repo here", err=False)
             raise click.Abort()
