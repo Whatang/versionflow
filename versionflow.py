@@ -71,11 +71,67 @@ def cli(ctx, repo_dir, bumpversion_config):
 
 
 @cli.command()
+@click.option("--create", "-c", is_flag=True)
 @click.pass_obj
-def init(config):
+def init(config, create):
     "Initialise the package to use versionflow."
-    # TODO: create an initialisation command
-    pass
+    Initialiser.from_config(config, create).initialise()
+
+
+@attr.s
+class Initialiser(object):
+    config = attr.ib()
+    create = attr.ib(default=False)
+
+    @classmethod
+    def from_config(cls, config, create):
+        return cls(config=config, create=create)
+
+    def initialise(self):
+        # Check this is a git repo
+        repo = self._check_git()
+        # Is it clean?
+        self._check_clean(repo)
+        # Check if git flow is initialised
+        self._check_gitflow(repo)
+        # TODO: Check that there is a bumpversion section
+        # self._check_bumpversion()
+        # TODO: Check that there is a version tag, and that it is correct as per the bumpversion section
+        # self._check_version_tag(repo)
+
+    def _check_git(self):
+        click.echo("Checking if this is a git repo...")
+        try:
+            repo = git.Repo(self.config.repo_dir)
+            click.echo("- Confirmed that this is a git repo")
+        except git.InvalidGitRepositoryError:
+            if self.create:
+                repo = git.Repo.init(self.config.repo_dir)
+                click.echo("- Initialised this directory as a git repo")
+            else:
+                click.echo("- Not a git repo", err=True)
+                raise click.Abort()
+        return repo
+
+    def _check_clean(self, repo):
+        if repo.is_dirty():
+            click.echo("git repo is dirty", err=True)
+            raise click.Abort()
+        else:
+            click.echo("git repo is clean")
+
+    def _check_gitflow(self, repo):
+        click.echo("Checking if this is a git flow repo...")
+        try:
+            repo.git.flow("config")
+            click.echo("- Confirmed that this is a git flow repo")
+        except git.GitCommandError:
+            if self.create:
+                repo.git.flow("init")
+                click.echo("- Initialised this directory as a git flow repo")
+            else:
+                click.echo("- Not a git flow repo", err=False)
+                raise click.Abort()
 
 
 @cli.command()
