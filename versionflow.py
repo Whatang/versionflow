@@ -29,16 +29,45 @@ BUMPVERSION_MAJOR = "major"
 @attr.s
 class Config(object):
     repo_dir = attr.ib()
+    bumpversion_config = attr.ib()
+
+    def bumpversion(self, bv_args, **subprocess_kw_args):
+        return subprocess.check_output(
+            ["bumpversion"] + bv_args + [self.bumpversion_config],
+            stderr=subprocess.STDOUT,
+            **subprocess_kw_args)
+
+
+def _set_curdir(ctx, _, path):
+    if not path:
+        path = os.path.abspath(os.curdir)
+    else:
+        path = os.path.abspath(path)
+        click.echo("Switching dir to " + path)
+    os.chdir(path)
+    return path
+
+
+def _make_abs_path(ctx, _, path):
+    return os.path.abspath(path)
 
 
 @click.version_option(version=VERSION)
 @click.group()
-@click.option('--repo-dir', metavar="PATH",
+@click.option('--repo-dir', metavar="PATH", is_eager=True,
+              callback=_set_curdir,
+              # TODO: add help
               type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--bumpversion-config',
+              callback=_make_abs_path,
+              # TODO: add help
+              type=click.Path(exists=False, file_okay=True,
+                              readable=True, writable=True, dir_okay=False),
+              default="setup.cfg")
 @click.pass_context
-def cli(ctx, repo_dir):
+def cli(ctx, repo_dir, bumpversion_config):
     # Record configuration options
-    ctx.obj = Config(repo_dir=repo_dir)
+    ctx.obj = Config(repo_dir=repo_dir, bumpversion_config=bumpversion_config)
 
 
 @cli.command()
@@ -77,12 +106,9 @@ class Processor(object):
     part = attr.ib(validator=attr.validators.in_(["patch", "minor", "major"]))
     flow_type = attr.ib(validator=attr.validators.in_(
         [GITFLOW_RELEASE, GITFLOW_HOTFIX]))
-    setup_cfg_path = attr.ib(default="setup.cfg")
 
     @classmethod
     def from_config(cls, config, part, flow_type):
-        if config.repo_dir:
-            os.chdir(config.repo_dir)
         try:
             return cls(repo=git.Repo(), config=config, part=part, flow_type=flow_type)
         except git.InvalidGitRepositoryError:
@@ -90,20 +116,14 @@ class Processor(object):
             raise click.Abort()
 
     def process(self):
-        versions = Versions.from_bumpversion(self)
+        versions = Versions.from_bumpversion(self.config, self.part)
         self._gitflow_start(versions)
-        self._bump_and_commit(versions)
+        self._bump_and_commit()
         self._gitflow_end(versions)
 
-    def bumpversion(self, bv_args, **subprocess_kw_args):
-        return subprocess.check_output(
-            ["bumpversion"] + bv_args + [self.setup_cfg_path],
-            stderr=subprocess.STDOUT,
-            **subprocess_kw_args)
-
-    def _bump_and_commit(self, versions):
+    def _bump_and_commit(self):
         try:
-            self.bumpversion(["--commit", self.part])
+            self.config.bumpversion(["--commit", self.part])
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
             click.echo(
@@ -145,12 +165,12 @@ class Versions(object):
     new_version = attr.ib()
 
     @classmethod
-    def from_bumpversion(cls, processor):
+    def from_bumpversion(cls, config, part):
         """Get the current and next version from bumpversion.
         """
         try:
-            bv_output = processor.bumpversion(
-                ["--list", processor.part, "--dry-run"])
+            bv_output = config.bumpversion(
+                ["--list", part, "--dry-run"])
             current_version = None
             new_version = None
             for line in bv_output.splitlines():
