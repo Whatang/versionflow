@@ -78,6 +78,13 @@ def init(config, create):
     Initialiser.from_config(config, create).initialise()
 
 
+@cli.command()
+@click.pass_obj
+def check(config):
+    "Check if the versionflow state of this package is OK."
+    Initialiser.from_config(config, False).initialise()
+
+
 @attr.s
 class Initialiser(object):
     config = attr.ib()
