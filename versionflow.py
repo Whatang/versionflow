@@ -176,9 +176,14 @@ class Processor(object):
             repo = git.Repo(config.repo_dir)
             if repo.is_dirty():
                 click.echo(
-                    "versionflow can only run on a clean repo - -- check everything in first!", err=True)
+                    "versionflow can only run on a clean repo - -- check everything in first!",
+                    err=True)
                 raise click.Abort()
-            return cls(repo=repo, config=config, part=part, flow_type=flow_type)
+            return cls(
+                repo=repo,
+                config=config,
+                part=part,
+                flow_type=flow_type)
         except git.InvalidGitRepositoryError:
             click.echo("No git repo here", err=False)
             raise click.Abort()
@@ -217,12 +222,16 @@ class Processor(object):
     def _gitflow_end(self, versions):
         try:
             with self.repo.git.custom_environment(GIT_MERGE_AUTOEDIT="no"):
-                self.repo.git.flow(self.flow_type, "finish",
-                                   versions.new_version,
-                                   "--message="+versions.release_merge_message(),
-                                   "--force_delete",
-                                   "--tag="+versions.release_version_string(),
-                                   )
+                self.repo.git.flow(
+                    self.flow_type,
+                    "finish",
+                    versions.new_version,
+                    "--message=" +
+                    versions.release_merge_message(),
+                    "--force_delete",
+                    "--tag=" +
+                    versions.release_version_string(),
+                )
         except git.GitCommandError as exc:
             self._git_failure("Failed to complete the release", exc)
 
