@@ -74,14 +74,14 @@ def cli(ctx, repo_dir, bumpversion_config):
 @click.option("--create", "-c", is_flag=True)
 @click.pass_obj
 def init(config, create):
-    "Initialise the package to use versionflow."
+    """Initialise the package to use versionflow."""
     Initialiser.from_config(config, create).initialise()
 
 
 @cli.command()
 @click.pass_obj
 def check(config):
-    "Check if the versionflow state of this package is OK."
+    """Check if the versionflow state of this package is OK."""
     Initialiser.from_config(config, False).initialise()
 
 
@@ -144,21 +144,21 @@ class Initialiser(object):
 @cli.command()
 @click.pass_obj
 def patch(config):
-    "Create a release with the patch number bumped."
+    """Create a release with the patch number bumped."""
     Processor.from_config(config, "patch", GITFLOW_RELEASE).process()
 
 
 @cli.command()
 @click.pass_obj
 def minor(config):
-    "Create a release with the minor number bumped."
+    """Create a release with the minor number bumped."""
     Processor.from_config(config, "minor", GITFLOW_RELEASE).process()
 
 
 @cli.command()
 @click.pass_obj
 def major(config):
-    "Create a release with the major number bumped."
+    """Create a release with the major number bumped."""
     Processor.from_config(config, "major", GITFLOW_RELEASE).process()
 
 
@@ -243,8 +243,7 @@ class Versions(object):
 
     @classmethod
     def from_bumpversion(cls, config, part):
-        """Get the current and next version from bumpversion.
-        """
+        """Get the current and next version from bumpversion."""
         try:
             bv_output = config.bumpversion(
                 ["--list", part, "--dry-run"])
