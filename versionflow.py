@@ -3,10 +3,12 @@ import subprocess
 
 import attr
 import bumpversion
+
 import click
 import pkg_resources
 import setuptools_scm
 import git
+import ConfigParser
 
 try:
     # Try to get version number from repository
@@ -24,18 +26,15 @@ GITFLOW_HOTFIX = "hotfix"
 BUMPVERSION_PATCH = "patch"
 BUMPVERSION_MINOR = "minor"
 BUMPVERSION_MAJOR = "major"
+BV_SECTION = "bumpversion"
+BV_CURRENT_VER_OPTION = "current_version"
+BV_NEW_VER_OPTION = "new_version"
 
 
 @attr.s
 class Config(object):
     repo_dir = attr.ib()
     bumpversion_config = attr.ib()
-
-    def bumpversion(self, bv_args, **subprocess_kw_args):
-        return subprocess.check_output(
-            ["bumpversion"] + bv_args + [self.bumpversion_config],
-            stderr=subprocess.STDOUT,
-            **subprocess_kw_args)
 
 
 def _set_curdir(ctx, _, path):
@@ -75,18 +74,18 @@ def cli(ctx, repo_dir, bumpversion_config):
 @click.pass_obj
 def init(config, create):
     """Initialise the package to use versionflow."""
-    Initialiser.from_config(config, create).initialise()
+    RepoStatusHandler.from_config(config, create).process()
 
 
 @cli.command()
 @click.pass_obj
 def check(config):
     """Check if the versionflow state of this package is OK."""
-    Initialiser.from_config(config, False).initialise()
+    RepoStatusHandler.from_config(config, False).process()
 
 
 @attr.s
-class Initialiser(object):
+class RepoStatusHandler(object):
     config = attr.ib()
     create = attr.ib(default=False)
 
@@ -94,17 +93,18 @@ class Initialiser(object):
     def from_config(cls, config, create):
         return cls(config=config, create=create)
 
-    def initialise(self):
+    def process(self):
         # Check this is a git repo
         repo = self._check_git()
         # Is it clean?
         self._check_clean(repo)
         # Check if git flow is initialised
         self._check_gitflow(repo)
-        # TODO: Check that there is a bumpversion section
-        # self._check_bumpversion()
-        # TODO: Check that there is a version tag, and that it is correct as per the bumpversion section
-        # self._check_version_tag(repo)
+        # Check that there is a bumpversion section
+        bv_wrapper = self._check_bumpversion()
+        # Check that there is a version tag, and that it is
+        # correct as per the bumpversion section
+        self._check_version_tag(repo, bv_wrapper)
 
     def _check_git(self):
         click.echo("Checking if this is a git repo...")
@@ -137,8 +137,31 @@ class Initialiser(object):
                 repo.git.flow("init")
                 click.echo("- Initialised this directory as a git flow repo")
             else:
-                click.echo("- Not a git flow repo", err=False)
+                click.echo("- Not a git flow repo", err=True)
                 raise click.Abort()
+
+    def _check_bumpversion(self):
+        click.echo("Checking if bumpversion is initialised...")
+        try:
+            bv = BumpVersion.from_existing(self.config)
+            click.echo(
+                "- bumpversion configured; version is at " +
+                bv.current_version)
+        except BumpVersion.NoBumpversionConfig:
+            if self.create:
+                bv = BumpVersion.initialize(self.config)
+                click.echo(
+                    "- bumpversion configured with current version set to" +
+                    bv.current_version)
+            else:
+                click.echo("- bumpversion not initalised!", err=True)
+                raise click.Abort()
+        return bv
+
+    def _check_version_tag(self, repo, bv_wrapper):
+        # TODO: Check that there is a version tag, and that it is
+        # correct as per the bumpversion section
+        pass
 
 
 @cli.command()
@@ -166,6 +189,7 @@ def major(config):
 class Processor(object):
     repo = attr.ib()
     config = attr.ib()
+    bv_wrapper = attr.ib()
     part = attr.ib(validator=attr.validators.in_(["patch", "minor", "major"]))
     flow_type = attr.ib(validator=attr.validators.in_(
         [GITFLOW_RELEASE, GITFLOW_HOTFIX]))
@@ -174,29 +198,38 @@ class Processor(object):
     def from_config(cls, config, part, flow_type):
         try:
             repo = git.Repo(config.repo_dir)
-            if repo.is_dirty():
-                click.echo(
-                    "versionflow can only run on a clean repo - -- check everything in first!",
-                    err=True)
-                raise click.Abort()
-            return cls(
-                repo=repo,
-                config=config,
-                part=part,
-                flow_type=flow_type)
         except git.InvalidGitRepositoryError:
             click.echo("No git repo here", err=False)
             raise click.Abort()
+        if repo.is_dirty():
+            click.echo(
+                "versionflow can only run on a clean repo - -- check "
+                "everything in first!",
+                err=True)
+            raise click.Abort()
+        try:
+            bv_wrapper = BumpVersion.from_existing(config)
+        except BumpVersion.NoBumpversionConfig:
+            click.echo("Could not determine bumpversion configuration",
+                       err=True)
+            raise click.Abort()
+        return cls(
+            repo=repo,
+            config=config,
+            bv_wrapper=bv_wrapper,
+            part=part,
+            flow_type=flow_type)
 
     def process(self):
-        versions = Versions.from_bumpversion(self.config, self.part)
+        versions = Versions.from_bumpversion(
+            self.bv_wrapper, self.part)
         self._gitflow_start(versions)
         self._bump_and_commit()
         self._gitflow_end(versions)
 
     def _bump_and_commit(self):
         try:
-            self.config.bumpversion(["--commit", self.part])
+            self.bv_wrapper.run_bumpversion(["--commit", self.part])
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
             click.echo(
@@ -237,27 +270,71 @@ class Processor(object):
 
 
 @attr.s
+class BumpVersion(object):
+    config_file = attr.ib()
+    parsed_config = attr.ib()
+    current_version = attr.ib()
+
+    class NoBumpversionConfig(RuntimeError):
+        pass
+
+    @classmethod
+    def from_existing(cls, vf_config):
+        if (not os.path.exists(vf_config.bumpversion_config)):
+            raise BumpVersion.NoBumpversionConfig()
+        parsed_config = ConfigParser.ConfigParser()
+        parsed_config.read(vf_config.bumpversion_config)
+        if not parsed_config.has_section(BV_SECTION):
+            raise BumpVersion.NoBumpversionConfig()
+        try:
+            current_version = parsed_config.get(
+                BV_SECTION, BV_CURRENT_VER_OPTION)
+        except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+            raise BumpVersion.NoBumpversionConfig()
+        return BumpVersion(
+            vf_config.bumpversion_config,
+            parsed_config,
+            current_version)
+
+    @classmethod
+    def initialize(cls, vf_config):
+        config_parser = ConfigParser.ConfigParser()
+        if os.path.exists(vf_config.bumpversion_config):
+            config_parser.read(vf_config.bumpversion_config)
+        if not config_parser.has_section(BV_SECTION):
+            config_parser.add_section(BV_SECTION)
+        if not config_parser.has_option(BV_SECTION, BV_CURRENT_VER_OPTION):
+            config_parser.set(BV_SECTION, BV_CURRENT_VER_OPTION, "0.0.0")
+        config_parser.write(vf_config.bumpversion_config)
+        return BumpVersion(
+            vf_config.bumpversion_config,
+            config_parser,
+            "0.0.0")
+
+    def run_bumpversion(self, bv_args, **subprocess_kw_args):
+        return subprocess.check_output(
+            ["bumpversion"] + bv_args + [self.config_file],
+            stderr=subprocess.STDOUT,
+            **subprocess_kw_args)
+
+
+@attr.s
 class Versions(object):
     current_version = attr.ib()
     new_version = attr.ib()
 
     @classmethod
-    def from_bumpversion(cls, config, part):
+    def from_bumpversion(cls, bv_wrapper, part):
         """Get the current and next version from bumpversion."""
         try:
-            bv_output = config.bumpversion(
+            current_version = bv_wrapper.current_version
+            bv_output = bv_wrapper.run_bumpversion(
                 ["--list", part, "--dry-run"])
-            current_version = None
             new_version = None
             for line in bv_output.splitlines():
-                if line.startswith("current_version="):
-                    current_version = line.strip().split("=")[-1]
-                elif line.startswith("new_version="):
+                if line.startswith(BV_NEW_VER_OPTION + "="):
                     new_version = line.strip().split("=")[-1]
-            # What if we can't find both current and new version?
-            if current_version is None:
-                click.echo("Failed to get current version number", err=True)
-                raise click.Abort()
+            # What if we can't find new version?
             if new_version is None:
                 click.echo("Failed to get next version number", err=True)
                 raise click.Abort()
