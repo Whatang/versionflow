@@ -94,10 +94,8 @@ class RepoStatusHandler(object):
         return cls(config=config, create=create)
 
     def process(self):
-        # Check this is a git repo
+        # Check this is a clean git repo
         repo = self._check_git()
-        # Is it clean?
-        self._check_clean(repo)
         # Check if git flow is initialised
         self._check_gitflow(repo)
         # Check that there is a bumpversion section
@@ -105,12 +103,18 @@ class RepoStatusHandler(object):
         # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
         self._check_version_tag(repo, bv_wrapper)
+        return repo, bv_wrapper
 
     def _check_git(self):
-        click.echo("Checking if this is a git repo...")
+        click.echo("Checking if this is a clean git repo...")
         try:
             repo = git.Repo(self.config.repo_dir)
             click.echo("- Confirmed that this is a git repo")
+            if repo.is_dirty():
+                click.echo("- git repo is dirty", err=True)
+                raise click.Abort()
+            else:
+                click.echo("- git repo is clean")
         except git.InvalidGitRepositoryError:
             if self.create:
                 repo = git.Repo.init(self.config.repo_dir)
@@ -119,13 +123,6 @@ class RepoStatusHandler(object):
                 click.echo("- Not a git repo", err=True)
                 raise click.Abort()
         return repo
-
-    def _check_clean(self, repo):
-        if repo.is_dirty():
-            click.echo("git repo is dirty", err=True)
-            raise click.Abort()
-        else:
-            click.echo("git repo is clean")
 
     def _check_gitflow(self, repo):
         click.echo("Checking if this is a git flow repo...")
@@ -196,23 +193,8 @@ class Processor(object):
 
     @classmethod
     def from_config(cls, config, part, flow_type):
-        try:
-            repo = git.Repo(config.repo_dir)
-        except git.InvalidGitRepositoryError:
-            click.echo("No git repo here", err=False)
-            raise click.Abort()
-        if repo.is_dirty():
-            click.echo(
-                "versionflow can only run on a clean repo - -- check "
-                "everything in first!",
-                err=True)
-            raise click.Abort()
-        try:
-            bv_wrapper = BumpVersion.from_existing(config)
-        except BumpVersion.NoBumpversionConfig:
-            click.echo("Could not determine bumpversion configuration",
-                       err=True)
-            raise click.Abort()
+        repo, bv_wrapper = RepoStatusHandler.from_config(
+            config, False).process()
         return cls(
             repo=repo,
             config=config,
