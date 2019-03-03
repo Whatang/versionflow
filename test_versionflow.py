@@ -60,14 +60,14 @@ def make_test_data(stage):
             # Add bumpversion config
             with open("setup.cfg", "w") as handle:
                 print >> handle, "[bumpversion]"
-                print >> handle, "current_version=0.0.2"
+                print >> handle, "current_version=1.0.2"
         elif index == 5:
             # Add non-matching tag
             gf.tag("0.0.1", "HEAD")
         elif index == 6:
             # Remove non-matching tag, add matching version tag
             gf.repo.git.tag("-d", "0.0.1")
-            gf.tag("0.0.2", "HEAD")
+            gf.tag("1.0.2", "HEAD")
 
 
 class TestRepoStatusHandler_Check(unittest.TestCase):
@@ -110,7 +110,52 @@ class TestRepoStatusHandler_Check(unittest.TestCase):
 
     def test_GoodRepo(self):
         make_test_data(6)
-        self.handler.process()
+        repo_status = self.handler.process()
+        self.assertEqual(repo_status.bv_wrapper.current_version, "1.0.2")
+
+
+class Test_RepoStatusHandler_Initialise(unittest.TestCase):
+    def setUp(self):
+        self.runner = click.testing.CliRunner()
+        self.fs = setup_with_context_manager(
+            self, self.runner.isolated_filesystem())
+        self.handler = RepoStatusHandler.from_config(config=Config(
+            os.getcwd(), bumpversion_config="setup.cfg"), create=True)
+
+    def test_NoGit(self):
+        make_test_data(-1)
+        repo_status = self.handler.process()
+        self.assertEqual(repo_status.bv_wrapper.current_version, "0.0.1")
+
+    def test_DirtyGit(self):
+        make_test_data(1)
+        self.assertRaises(RepoStatusHandler.DirtyRepo, self.handler.process)
+
+    def test_NoGitFlow(self):
+        make_test_data(2)
+        repo_status = self.handler.process()
+        self.assertEqual(repo_status.bv_wrapper.current_version, "0.0.1")
+
+    def test_NoBumpVersion(self):
+        make_test_data(3)
+        repo_status = self.handler.process()
+        self.assertEqual(repo_status.bv_wrapper.current_version, "0.0.1")
+
+    def test_NoTags(self):
+        make_test_data(4)
+        repo_status = self.handler.process()
+        self.assertEqual(repo_status.bv_wrapper.current_version, "1.0.2")
+
+    def test_BadTags(self):
+        make_test_data(5)
+        self.assertRaises(
+            RepoStatusHandler.BadVersionTags,
+            self.handler.process)
+
+    def test_GoodRepo(self):
+        make_test_data(6)
+        repo_status = self.handler.process()
+        self.assertEqual(repo_status.bv_wrapper.current_version, "1.0.2")
 
 
 class TestCommandLine(unittest.TestCase):
