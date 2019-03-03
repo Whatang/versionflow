@@ -4,7 +4,7 @@ import click.testing
 import os
 import git
 import gitflow.core
-from versionflow import RepoStatusHandler, Config
+from versionflow import VersionFlowChecker, Config
 
 
 def setup_with_context_manager(testcase, cm):
@@ -43,19 +43,19 @@ def make_test_data(stage):
     for index in xrange(0, stage + 1):
         if index == 0:
             # Create git repo
-            r = git.Repo.init()
+            repo = git.Repo.init()
         elif index == 1:
             # Make a dirty repo
             with open("test", "w") as handle:
                 print >> handle, "test"
-            r.index.add(["test"])
+            repo.index.add(["test"])
         elif index == 2:
             # Commit so the repo is clean
-            r.index.commit("Initial commit")
+            repo.index.commit("Initial commit")
         elif index == 3:
             # Initialize git flow
-            gf = gitflow.core.GitFlow()
-            gf.init()
+            gf_wrapper = gitflow.core.GitFlow()
+            gf_wrapper.init()
         elif index == 4:
             # Add bumpversion config
             with open("setup.cfg", "w") as handle:
@@ -63,99 +63,111 @@ def make_test_data(stage):
                 print >> handle, "current_version=1.0.2"
         elif index == 5:
             # Add non-matching tag
-            gf.tag("0.0.1", "HEAD")
+            gf_wrapper.tag("0.0.1", "HEAD")
         elif index == 6:
             # Remove non-matching tag, add matching version tag
-            gf.repo.git.tag("-d", "0.0.1")
-            gf.tag("1.0.2", "HEAD")
+            gf_wrapper.repo.git.tag("-d", "0.0.1")
+            gf_wrapper.tag("1.0.2", "HEAD")
 
 
-class TestRepoStatusHandler_Check(unittest.TestCase):
+class TestVersionFlowChecker_Check(unittest.TestCase):
     def setUp(self):
         self.runner = click.testing.CliRunner()
         self.fs = setup_with_context_manager(
             self, self.runner.isolated_filesystem())
-        self.handler = RepoStatusHandler.from_config(config=Config(
+        self.handler = VersionFlowChecker.from_config(config=Config(
             os.getcwd(), bumpversion_config="setup.cfg"), create=False)
 
     def test_NoGit(self):
         make_test_data(-1)
-        self.assertRaises(RepoStatusHandler.NoRepo, self.handler.process)
+        self.assertRaises(VersionFlowChecker.NoRepo, self.handler.process)
 
     def test_DirtyGit(self):
         make_test_data(1)
-        self.assertRaises(RepoStatusHandler.DirtyRepo, self.handler.process)
+        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
 
     def test_NoGitFlow(self):
         make_test_data(2)
-        self.assertRaises(RepoStatusHandler.NoGitFlow, self.handler.process)
+        self.assertRaises(VersionFlowChecker.NoGitFlow, self.handler.process)
 
     def test_NoBumpVersion(self):
         make_test_data(3)
         self.assertRaises(
-            RepoStatusHandler.BadBumpVersion,
+            VersionFlowChecker.BadBumpVersion,
             self.handler.process)
 
     def test_NoTags(self):
         make_test_data(4)
         self.assertRaises(
-            RepoStatusHandler.NoVersionTags,
+            VersionFlowChecker.NoVersionTags,
             self.handler.process)
 
     def test_BadTags(self):
         make_test_data(5)
         self.assertRaises(
-            RepoStatusHandler.BadVersionTags,
+            VersionFlowChecker.BadVersionTags,
             self.handler.process)
 
     def test_GoodRepo(self):
         make_test_data(6)
-        repo_status = self.handler.process()
-        self.assertEqual(repo_status.bv_wrapper.current_version, "1.0.2")
+        vf_repo = self.handler.process()
+        self.assertEqual(vf_repo.bv_wrapper.current_version, "1.0.2")
 
 
-class Test_RepoStatusHandler_Initialise(unittest.TestCase):
+class Test_VersionFlowChecker_Initialise(unittest.TestCase):
     def setUp(self):
         self.runner = click.testing.CliRunner()
         self.fs = setup_with_context_manager(
             self, self.runner.isolated_filesystem())
-        self.handler = RepoStatusHandler.from_config(config=Config(
+        self.handler = VersionFlowChecker.from_config(config=Config(
             os.getcwd(), bumpversion_config="setup.cfg"), create=True)
 
-    def test_NoGit(self):
+    def test_InitNoGit(self):
         make_test_data(-1)
-        repo_status = self.handler.process()
-        self.assertEqual(repo_status.bv_wrapper.current_version, "0.0.1")
+        vf_repo = self.handler.process()
+        self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.1")
 
-    def test_DirtyGit(self):
+    def test_InitDirtyGit(self):
         make_test_data(1)
-        self.assertRaises(RepoStatusHandler.DirtyRepo, self.handler.process)
+        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
 
-    def test_NoGitFlow(self):
+    def test_InitNoGitFlow(self):
         make_test_data(2)
-        repo_status = self.handler.process()
-        self.assertEqual(repo_status.bv_wrapper.current_version, "0.0.1")
+        vf_repo = self.handler.process()
+        self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.1")
 
-    def test_NoBumpVersion(self):
+    def test_InitNoBumpVersion(self):
         make_test_data(3)
-        repo_status = self.handler.process()
-        self.assertEqual(repo_status.bv_wrapper.current_version, "0.0.1")
+        vf_repo = self.handler.process()
+        self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.1")
 
-    def test_NoTags(self):
+    def test_InitNoTags(self):
         make_test_data(4)
-        repo_status = self.handler.process()
-        self.assertEqual(repo_status.bv_wrapper.current_version, "1.0.2")
+        vf_repo = self.handler.process()
+        self.assertEqual(vf_repo.bv_wrapper.current_version, "1.0.2")
 
-    def test_BadTags(self):
+    def test_InitBadTags(self):
         make_test_data(5)
         self.assertRaises(
-            RepoStatusHandler.BadVersionTags,
+            VersionFlowChecker.BadVersionTags,
             self.handler.process)
 
-    def test_GoodRepo(self):
+    def test_InitRepoAlreadyGood(self):
         make_test_data(6)
-        repo_status = self.handler.process()
-        self.assertEqual(repo_status.bv_wrapper.current_version, "1.0.2")
+        vf_repo = self.handler.process()
+        self.assertEqual(vf_repo.bv_wrapper.current_version,
+                         "1.0.2")
+
+
+class Test_VersionFlowRepo(unittest.TestCase):
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        pass
+
+    def test_process_action(self):
+        pass
 
 
 class TestCommandLine(unittest.TestCase):

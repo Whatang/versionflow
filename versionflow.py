@@ -75,25 +75,57 @@ def cli(ctx, repo_dir, bumpversion_config):
 @click.pass_obj
 def init(config, create):
     """Initialise the package to use versionflow."""
-    RepoStatusHandler.from_config(config, create).process()
+    VersionFlowChecker.from_config(config, create).process()
 
 
 @cli.command()
 @click.pass_obj
 def check(config):
     """Check if the versionflow state of this package is OK."""
-    RepoStatusHandler.from_config(config, False).process()
+    VersionFlowChecker.from_config(config, False).process()
 
 
 @attr.s
-class RepoStatus(object):
-    repo = attr.ib()
+class VersionFlowRepo(object):
+    config = attr.ib()
     gf_wrapper = attr.ib()
     bv_wrapper = attr.ib()
 
+    def process_action(self, versions, part):
+        try:
+            self.gitflow_start(versions)
+            self.bv_wrapper.bump_and_commit(part)
+            self.gitflow_end(versions)
+        except git.GitCommandError as exc:
+            self._git_failure("Failed to do the release", exc)
+
+    @staticmethod
+    def _git_failure(message, exc):
+        click.echo(message, err=True)
+        click.echo("{command} returned status {status}".format(
+            command=exc.command, status=exc.status), err=True)
+        click.echo(exc.stdout, err=True)
+        click.echo(exc.stderr, err=True)
+        raise click.Abort()
+
+    def gitflow_start(self, versions):
+        self.gf_wrapper.create(
+            gitflow.branches.ReleaseBranchManager.identifier,
+            versions.new_version)
+
+    def gitflow_end(self, versions):
+        self.gf_wrapper.finish(
+            gitflow.branches.ReleaseBranchManager.identifier,
+            versions.new_version,
+            False,
+            False,
+            False,
+            True,
+            tagging_info={})
+
 
 @attr.s
-class RepoStatusHandler(object):
+class VersionFlowChecker(object):
     config = attr.ib()
     create = attr.ib(default=False)
 
@@ -121,15 +153,15 @@ class RepoStatusHandler(object):
 
     def process(self):
         # Check this is a clean git repo
-        repo = self._check_git()
+        self._check_git()
         # Check if git flow is initialised
-        gf_wrapper = self._check_gitflow(repo)
+        gf_wrapper = self._check_gitflow()
         # Check that there is a bumpversion section
         bv_wrapper = self._check_bumpversion()
         # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
-        self._check_version_tag(repo, bv_wrapper, gf_wrapper)
-        return RepoStatus(repo, gf_wrapper, bv_wrapper)
+        self._check_version_tag(bv_wrapper, gf_wrapper)
+        return VersionFlowRepo(self.config, gf_wrapper, bv_wrapper)
 
     def _check_git(self):
         click.echo("Checking if this is a clean git repo...")
@@ -148,9 +180,8 @@ class RepoStatusHandler(object):
             else:
                 click.echo("- Not a git repo", err=True)
                 raise self.NoRepo()
-        return repo
 
-    def _check_gitflow(self, repo):
+    def _check_gitflow(self):
         click.echo("Checking if this is a git flow repo...")
         gf = gitflow.core.GitFlow()
         if gf.is_initialized():
@@ -182,7 +213,7 @@ class RepoStatusHandler(object):
                 raise self.BadBumpVersion()
         return bv
 
-    def _check_version_tag(self, repo, bv_wrapper, gf_wrapper):
+    def _check_version_tag(self, bv_wrapper, gf_wrapper):
         # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
         click.echo("Checking version in repository tags...")
@@ -213,88 +244,46 @@ class RepoStatusHandler(object):
 @click.pass_obj
 def patch(config):
     """Create a release with the patch number bumped."""
-    Processor.from_config(config, "patch", GITFLOW_RELEASE).process()
+    VersionFlowProcessor.from_config(
+        config, "patch", GITFLOW_RELEASE).process()
 
 
 @cli.command()
 @click.pass_obj
 def minor(config):
     """Create a release with the minor number bumped."""
-    Processor.from_config(config, "minor", GITFLOW_RELEASE).process()
+    VersionFlowProcessor.from_config(
+        config, "minor", GITFLOW_RELEASE).process()
 
 
 @cli.command()
 @click.pass_obj
 def major(config):
     """Create a release with the major number bumped."""
-    Processor.from_config(config, "major", GITFLOW_RELEASE).process()
+    VersionFlowProcessor.from_config(
+        config, "major", GITFLOW_RELEASE).process()
 
 
 @attr.s
-class Processor(object):
-    repo_status = attr.ib()
-    config = attr.ib()
-    bv_wrapper = attr.ib()
+class VersionFlowProcessor(object):
+    vf_repo = attr.ib()
     part = attr.ib(validator=attr.validators.in_(["patch", "minor", "major"]))
     flow_type = attr.ib(validator=attr.validators.in_(
         [GITFLOW_RELEASE, GITFLOW_HOTFIX]))
 
     @classmethod
     def from_config(cls, config, part, flow_type):
-        repo_status = RepoStatusHandler.from_config(
+        vf_repo = VersionFlowChecker.from_config(
             config, False).process()
         return cls(
-            repo_status=repo_status,
-            config=config,
+            vf_repo=vf_repo,
             part=part,
             flow_type=flow_type)
 
     def process(self):
         versions = Versions.from_bumpversion(
-            self.repo_status.bv_wrapper, self.part)
-        self._gitflow_start(versions)
-        self._bump_and_commit()
-        self._gitflow_end(versions)
-
-    def _bump_and_commit(self):
-        try:
-            self.bv_wrapper.run_bumpversion(["--commit", self.part])
-        except subprocess.CalledProcessError as exc:
-            # Handle bumpversion failures
-            click.echo(
-                "Failed to bump the version number in the release", err=True)
-            click.echo(exc.output, err=True)
-            raise click.Abort()
-
-    @staticmethod
-    def _git_failure(message, exc):
-        click.echo(message, err=True)
-        click.echo("{command} returned status {status}".format(
-            command=exc.command, status=exc.status), err=True)
-        click.echo(exc.stdout, err=True)
-        click.echo(exc.stderr, err=True)
-        raise click.Abort()
-
-    def _gitflow_start(self, versions):
-        try:
-            self.repo_status.gf_wrapper.create(
-                gitflow.branches.ReleaseBranchManager.identifier,
-                versions.new_version)
-        except git.GitCommandError as exc:
-            self._git_failure("Failed to start the release", exc)
-
-    def _gitflow_end(self, versions):
-        try:
-            self.repo_status.gf_wrapper.finish(
-                gitflow.branches.ReleaseBranchManager.identifier,
-                versions.new_version,
-                False,
-                False,
-                False,
-                True,
-                tagging_info={})
-        except git.GitCommandError as exc:
-            self._git_failure("Failed to complete the release", exc)
+            self.vf_repo.bv_wrapper, self.part)
+        self.vf_repo.process_action(versions, self.part)
 
 
 @attr.s
@@ -339,7 +328,30 @@ class BumpVersion(object):
             config_parser,
             START_VERSION)
 
-    def run_bumpversion(self, bv_args, **subprocess_kw_args):
+    def bump_and_commit(self, part):
+        try:
+            self._run_bumpversion(
+                ["--commit", part])
+        except subprocess.CalledProcessError as exc:
+            # Handle bumpversion failures
+            click.echo(
+                "Failed to bump the version number in the release", err=True)
+            click.echo(exc.output, err=True)
+            raise click.Abort()
+
+    def get_new_version(self, part):
+        bv_output = self._run_bumpversion(
+            ["--list", part, "--dry-run"])
+        new_version = None
+        for line in bv_output.splitlines():
+            if line.startswith(BV_NEW_VER_OPTION + "="):
+                new_version = line.strip().split("=")[-1]
+        # What if we can't find new version?
+        if new_version is None:
+            click.echo("Failed to get next version number", err=True)
+            raise click.Abort()
+
+    def _run_bumpversion(self, bv_args, **subprocess_kw_args):
         return subprocess.check_output(
             ["bumpversion"] + bv_args + [self.config_file],
             stderr=subprocess.STDOUT,
@@ -355,18 +367,9 @@ class Versions(object):
     def from_bumpversion(cls, bv_wrapper, part):
         """Get the current and next version from bumpversion."""
         try:
-            current_version = bv_wrapper.current_version
-            bv_output = bv_wrapper.run_bumpversion(
-                ["--list", part, "--dry-run"])
-            new_version = None
-            for line in bv_output.splitlines():
-                if line.startswith(BV_NEW_VER_OPTION + "="):
-                    new_version = line.strip().split("=")[-1]
-            # What if we can't find new version?
-            if new_version is None:
-                click.echo("Failed to get next version number", err=True)
-                raise click.Abort()
-            return cls(current_version, new_version)
+            return cls(
+                bv_wrapper.current_version,
+                bv_wrapper.get_new_version(part))
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
             click.echo("Failed to get version numbers", err=True)
@@ -378,7 +381,3 @@ class Versions(object):
 
     def release_merge_message(self):
         return "Merging release/{version}".format(version=self.new_version)
-
-
-if __name__ == "__main__":
-    cli()  # pylint:disable=no-value-for-parameter
