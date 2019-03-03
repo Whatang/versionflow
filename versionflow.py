@@ -1,14 +1,14 @@
 import os
 import subprocess
+import ConfigParser
 
 import attr
-import bumpversion
-
 import click
 import pkg_resources
 import setuptools_scm
 import git
-import ConfigParser
+import gitflow.core
+import gitflow.branches
 
 try:
     # Try to get version number from repository
@@ -85,9 +85,34 @@ def check(config):
 
 
 @attr.s
+class RepoStatus(object):
+    repo = attr.ib()
+    gf_wrapper = attr.ib()
+    bv_wrapper = attr.ib()
+
+
+@attr.s
 class RepoStatusHandler(object):
     config = attr.ib()
     create = attr.ib(default=False)
+
+    class NoRepo(RuntimeError):
+        pass
+
+    class DirtyRepo(RuntimeError):
+        pass
+
+    class NoGitFlow(RuntimeError):
+        pass
+
+    class BadBumpVersion(RuntimeError):
+        pass
+
+    class NoVersionTags(RuntimeError):
+        pass
+
+    class BadVersionTags(RuntimeError):
+        pass
 
     @classmethod
     def from_config(cls, config, create):
@@ -97,13 +122,13 @@ class RepoStatusHandler(object):
         # Check this is a clean git repo
         repo = self._check_git()
         # Check if git flow is initialised
-        self._check_gitflow(repo)
+        gf_wrapper = self._check_gitflow(repo)
         # Check that there is a bumpversion section
         bv_wrapper = self._check_bumpversion()
         # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
-        self._check_version_tag(repo, bv_wrapper)
-        return repo, bv_wrapper
+        self._check_version_tag(repo, bv_wrapper, gf_wrapper)
+        return RepoStatus(repo, gf_wrapper, bv_wrapper)
 
     def _check_git(self):
         click.echo("Checking if this is a clean git repo...")
@@ -112,7 +137,7 @@ class RepoStatusHandler(object):
             click.echo("- Confirmed that this is a git repo")
             if repo.is_dirty():
                 click.echo("- git repo is dirty", err=True)
-                raise click.Abort()
+                raise self.DirtyRepo()
             else:
                 click.echo("- git repo is clean")
         except git.InvalidGitRepositoryError:
@@ -121,21 +146,22 @@ class RepoStatusHandler(object):
                 click.echo("- Initialised this directory as a git repo")
             else:
                 click.echo("- Not a git repo", err=True)
-                raise click.Abort()
+                raise self.NoRepo()
         return repo
 
     def _check_gitflow(self, repo):
         click.echo("Checking if this is a git flow repo...")
-        try:
-            repo.git.flow("config")
+        gf = gitflow.core.GitFlow()
+        if gf.is_initialized():
             click.echo("- Confirmed that this is a git flow repo")
-        except git.GitCommandError:
-            if self.create:
-                repo.git.flow("init")
-                click.echo("- Initialised this directory as a git flow repo")
-            else:
-                click.echo("- Not a git flow repo", err=True)
-                raise click.Abort()
+            return
+        if self.create:
+            click.echo("- Initialising a git flow repo...")
+            gf.init()
+            click.echo("- Initialised this directory as a git flow repo")
+        else:
+            click.echo("- Not a git flow repo", err=True)
+            raise self.NoGitFlow()
 
     def _check_bumpversion(self):
         click.echo("Checking if bumpversion is initialised...")
@@ -152,13 +178,34 @@ class RepoStatusHandler(object):
                     bv.current_version)
             else:
                 click.echo("- bumpversion not initalised!", err=True)
-                raise click.Abort()
+                raise self.BadBumpVersion()
         return bv
 
-    def _check_version_tag(self, repo, bv_wrapper):
+    def _check_version_tag(self, repo, bv_wrapper, gf_wrapper):
         # TODO: Check that there is a version tag, and that it is
         # correct as per the bumpversion section
-        pass
+        click.echo("Checking version in repository tags...")
+        try:
+            # Try to get version number from repository
+            def last_version(version):
+                if str(version.tag) == '0.0':
+                    raise LookupError()
+                return version.format_with("{tag}")
+            version = setuptools_scm.get_version(
+                version_scheme=last_version,
+                local_scheme=lambda v: "")
+            click.echo("- Last tagged version is " + version)
+            # TODO: Check if the version tags match what we expect
+            if version != bv_wrapper.current_version:
+                raise self.BadVersionTags()
+        except LookupError:
+            if self.create:
+                # TODO: set base version tags
+                pass
+            else:
+                click.echo(
+                    "- Could not get version number from repository tags")
+                raise self.NoVersionTags()
 
 
 @cli.command()
@@ -184,7 +231,7 @@ def major(config):
 
 @attr.s
 class Processor(object):
-    repo = attr.ib()
+    repo_status = attr.ib()
     config = attr.ib()
     bv_wrapper = attr.ib()
     part = attr.ib(validator=attr.validators.in_(["patch", "minor", "major"]))
@@ -193,18 +240,17 @@ class Processor(object):
 
     @classmethod
     def from_config(cls, config, part, flow_type):
-        repo, bv_wrapper = RepoStatusHandler.from_config(
+        repo_status = RepoStatusHandler.from_config(
             config, False).process()
         return cls(
-            repo=repo,
+            repo_status=repo_status,
             config=config,
-            bv_wrapper=bv_wrapper,
             part=part,
             flow_type=flow_type)
 
     def process(self):
         versions = Versions.from_bumpversion(
-            self.bv_wrapper, self.part)
+            self.repo_status.bv_wrapper, self.part)
         self._gitflow_start(versions)
         self._bump_and_commit()
         self._gitflow_end(versions)
@@ -230,23 +276,22 @@ class Processor(object):
 
     def _gitflow_start(self, versions):
         try:
-            self.repo.git.flow(self.flow_type, "start", versions.new_version)
+            self.repo_status.gf_wrapper.create(
+                gitflow.branches.ReleaseBranchManager.identifier,
+                versions.new_version)
         except git.GitCommandError as exc:
             self._git_failure("Failed to start the release", exc)
 
     def _gitflow_end(self, versions):
         try:
-            with self.repo.git.custom_environment(GIT_MERGE_AUTOEDIT="no"):
-                self.repo.git.flow(
-                    self.flow_type,
-                    "finish",
-                    versions.new_version,
-                    "--message=" +
-                    versions.release_merge_message(),
-                    "--force_delete",
-                    "--tag=" +
-                    versions.release_version_string(),
-                )
+            self.repo_status.gf_wrapper.finish(
+                gitflow.branches.ReleaseBranchManager.identifier,
+                versions.new_version,
+                False,
+                False,
+                False,
+                True,
+                tagging_info={})
         except git.GitCommandError as exc:
             self._git_failure("Failed to complete the release", exc)
 
