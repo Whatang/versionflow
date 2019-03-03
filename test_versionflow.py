@@ -493,3 +493,7 @@ class TestCommandLine(unittest.TestCase):
 
     def testMajor(self):
         pass
+
+
+if __name__ == "__main__":
+    unittest.main()
