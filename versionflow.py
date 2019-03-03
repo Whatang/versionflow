@@ -29,6 +29,7 @@ BUMPVERSION_MAJOR = "major"
 BV_SECTION = "bumpversion"
 BV_CURRENT_VER_OPTION = "current_version"
 BV_NEW_VER_OPTION = "new_version"
+START_VERSION = "0.0.1"
 
 
 @attr.s
@@ -154,14 +155,14 @@ class RepoStatusHandler(object):
         gf = gitflow.core.GitFlow()
         if gf.is_initialized():
             click.echo("- Confirmed that this is a git flow repo")
-            return
-        if self.create:
+        elif self.create:
             click.echo("- Initialising a git flow repo...")
             gf.init()
             click.echo("- Initialised this directory as a git flow repo")
         else:
             click.echo("- Not a git flow repo", err=True)
             raise self.NoGitFlow()
+        return gf
 
     def _check_bumpversion(self):
         click.echo("Checking if bumpversion is initialised...")
@@ -174,7 +175,7 @@ class RepoStatusHandler(object):
             if self.create:
                 bv = BumpVersion.initialize(self.config)
                 click.echo(
-                    "- bumpversion configured with current version set to" +
+                    "- bumpversion configured with current version set to " +
                     bv.current_version)
             else:
                 click.echo("- bumpversion not initalised!", err=True)
@@ -182,7 +183,7 @@ class RepoStatusHandler(object):
         return bv
 
     def _check_version_tag(self, repo, bv_wrapper, gf_wrapper):
-        # TODO: Check that there is a version tag, and that it is
+        # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
         click.echo("Checking version in repository tags...")
         try:
@@ -195,13 +196,13 @@ class RepoStatusHandler(object):
                 version_scheme=last_version,
                 local_scheme=lambda v: "")
             click.echo("- Last tagged version is " + version)
-            # TODO: Check if the version tags match what we expect
+            # Check if the version tags match what we expect
             if version != bv_wrapper.current_version:
                 raise self.BadVersionTags()
         except LookupError:
             if self.create:
-                # TODO: set base version tags
-                pass
+                # set base version tags
+                gf_wrapper.tag(bv_wrapper.current_version, "HEAD")
             else:
                 click.echo(
                     "- Could not get version number from repository tags")
@@ -331,12 +332,12 @@ class BumpVersion(object):
         if not config_parser.has_section(BV_SECTION):
             config_parser.add_section(BV_SECTION)
         if not config_parser.has_option(BV_SECTION, BV_CURRENT_VER_OPTION):
-            config_parser.set(BV_SECTION, BV_CURRENT_VER_OPTION, "0.0.0")
-        config_parser.write(vf_config.bumpversion_config)
+            config_parser.set(BV_SECTION, BV_CURRENT_VER_OPTION, START_VERSION)
+        config_parser.write(open(vf_config.bumpversion_config, "w"))
         return BumpVersion(
             vf_config.bumpversion_config,
             config_parser,
-            "0.0.0")
+            START_VERSION)
 
     def run_bumpversion(self, bv_args, **subprocess_kw_args):
         return subprocess.check_output(
