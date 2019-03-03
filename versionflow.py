@@ -156,11 +156,11 @@ class VersionFlowChecker(object):
 
     def process(self):
         # Check this is a clean git repo
-        self._check_git()
+        repo = self._check_git()
         # Check if git flow is initialised
         gf_wrapper = self._check_gitflow()
         # Check that there is a bumpversion section
-        bv_wrapper = self._check_bumpversion()
+        bv_wrapper = self._check_bumpversion(repo)
         # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
         self._check_version_tag(bv_wrapper, gf_wrapper)
@@ -183,6 +183,7 @@ class VersionFlowChecker(object):
             else:
                 click.echo("- Not a git repo", err=True)
                 raise self.NoRepo()
+        return repo
 
     def _check_gitflow(self):
         click.echo("Checking if this is a git flow repo...")
@@ -198,13 +199,12 @@ class VersionFlowChecker(object):
             raise self.NoGitFlow()
         return gf
 
-    def _check_bumpversion(self):
+    def _check_bumpversion(self, repo):
         click.echo("Checking if bumpversion is initialised...")
         try:
+            # Check that the bumpversion config file is in the git repo
             bv = BumpVersion.from_existing(self.config)
-            click.echo(
-                "- bumpversion configured; version is at " +
-                bv.current_version)
+            repo.active_branch.commit.tree / self.config.bumpversion_config
         except BumpVersion.NoBumpversionConfig:
             if self.create:
                 bv = BumpVersion.initialize(self.config)
@@ -214,6 +214,16 @@ class VersionFlowChecker(object):
             else:
                 click.echo("- bumpversion not initalised!", err=True)
                 raise self.NoBumpVersion()
+        except KeyError:
+            if self.create:
+                click.echo("- bumpversion config added to git repo")
+                repo.index.add([self.config.bumpversion_config])
+            else:
+                click.echo("- bumpversion config not added to git repo")
+                raise self.BumpNotInGit()
+        click.echo(
+            "- bumpversion configured; version is at " +
+            bv.current_version)
         return bv
 
     def _check_version_tag(self, bv_wrapper, gf_wrapper):
