@@ -29,7 +29,7 @@ BUMPVERSION_MAJOR = "major"
 BV_SECTION = "bumpversion"
 BV_CURRENT_VER_OPTION = "current_version"
 BV_NEW_VER_OPTION = "new_version"
-START_VERSION = "0.0.1"
+START_VERSION = "0.0.0"
 
 
 @attr.s
@@ -138,7 +138,10 @@ class VersionFlowChecker(object):
     class NoGitFlow(RuntimeError):
         pass
 
-    class BadBumpVersion(RuntimeError):
+    class NoBumpVersion(RuntimeError):
+        pass
+
+    class BumpNotInGit(RuntimeError):
         pass
 
     class NoVersionTags(RuntimeError):
@@ -210,7 +213,7 @@ class VersionFlowChecker(object):
                     bv.current_version)
             else:
                 click.echo("- bumpversion not initalised!", err=True)
-                raise self.BadBumpVersion()
+                raise self.NoBumpVersion()
         return bv
 
     def _check_version_tag(self, bv_wrapper, gf_wrapper):
@@ -381,3 +384,7 @@ class Versions(object):
 
     def release_merge_message(self):
         return "Merging release/{version}".format(version=self.new_version)
+
+
+if __name__ == "__main__":
+    cli()  # pylint:disable=no-value-for-parameter
