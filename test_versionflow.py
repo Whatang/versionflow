@@ -41,56 +41,97 @@ class TestBumpVersionWrapper(unittest.TestCase):
         pass
 
 
-class Flag(object):
-    next_flag = 1
+def make_flag_class(classname):
+    @attr.s(frozen=True)
+    class Flag(object):
+        """
+        A flag representing a possible state.
 
-    def __init__(self, name, flag_val=None):
-        self.name = name
-        if flag_val is None:
-            flag_val = Flag.next_flag
-            Flag.next_flag *= 2
-        self.flag = flag_val
+        Flags can be either "primitive" or "combined": each "primitive" flag
+        represents an atomic state, i.e. that a single condition holds. Flags can
+        be combined to represent states where multiple conditions hold.
 
-    def __call__(self, state):
-        if self.flag == 0:
-            return state.flag == 0
-        answer = ((self.flag & state.flag) == self.flag)
-        return answer
+        To combine two Flags to represent a state where all their conditions hold
+        simultaneously, use the | operator.
 
-    def __or__(self, other):
-        if other.flag == 0:
-            return self
-        if self.flag == 0:
-            return other
-        return Flag(self.name + "|" + other.name,
-                    self.flag | other.flag)
+        Call a Flag instance f with another instance g to check whether all of f's
+        conditions hold in the state represented by g.
+        """
 
-    def __ror__(self, other):
-        if other.flag == 0:
-            return self
-        if self.flag == 0:
-            return other
-        return Flag(other.name + "|" + self.name,
-                    self.flag | other.flag)
+        @attr.s(frozen=True)
+        class _flag_val(object):
+            _value = attr.ib()
+            _next_value = 1
 
-    def __str__(self):
-        return self.name
+            @classmethod
+            def next_primitive(cls):
+                flag = cls(cls._next_value)
+                cls._next_value *= 2
+                return flag
+
+            def __cmp__(self, other):
+                if isinstance(other, type(self)):
+                    return cmp(self._value, other._value)
+                return cmp(self._value, other)
+
+            def __or__(self, other):
+                return type(self)(self._value | other._value)
+
+            def __and__(self, other):
+                return type(self)(self._value & other._value)
+
+        def _check_is_flag(f, _, v):
+            if not isinstance(v, f._flag_val):
+                raise TypeError("Must be flag val")
+
+        name = attr.ib()
+        flag = attr.ib(validator=_check_is_flag)
+
+        @classmethod
+        def primitive(cls, name):
+            flag = cls._flag_val.next_primitive()
+            return cls(name, flag)
+
+        @classmethod
+        def nothing(cls, name):
+            return cls(name, cls._flag_val(0))
+
+        def __call__(self, state):
+            if self.flag == 0:
+                return state.flag == 0
+            answer = ((self.flag & state.flag) == self.flag)
+            return answer
+
+        def __or__(self, other):
+            if other.flag == 0:
+                return self
+            if self.flag == 0:
+                return other
+            return Flag(self.name + "|" + other.name,
+                        self.flag | other.flag)
+
+        def __str__(self):
+            return self.name
+    Flag.__name__ = classname
+    return Flag
 
 
 @attr.s
 class TestDataMaker(object):
     state = attr.ib()
 
-    _NOTHING = Flag("Nothing", 0)
-    _IS_GIT = Flag("IsGitRepo")
-    _HAS_INITIAL_COMMIT = Flag("InitialCommit") | _IS_GIT
-    _IS_DIRTY = Flag("IsDirty") | _IS_GIT
-    _IS_GITFLOW = Flag("GitFlow") | _IS_GIT
-    _HAS_BUMP = Flag("Bump")
-    _ADD_BUMP = Flag("BumpStaged") | _HAS_BUMP | _IS_GIT
-    _COMMIT_BUMP = Flag("BumpCommitted") | _ADD_BUMP
-    _HAS_BAD_TAG = Flag("BadTag") | _IS_GIT
-    _HAS_GOOD_TAG = Flag("GoodTag") | _IS_GIT
+    _flag = make_flag_class("TestDataFlag")
+
+    _NOTHING = _flag.nothing("Nothing")
+    _IS_GIT = _flag.primitive("IsGitRepo")
+    _HAS_INITIAL_COMMIT = _flag.primitive("InitialCommit") | _IS_GIT
+    _IS_DIRTY = _flag.primitive("IsDirty") | _IS_GIT
+    _IS_GITFLOW = _flag.primitive("GitFlow") | _IS_GIT
+    _HAS_BUMP = _flag.primitive("Bump")
+    _ADD_BUMP = _flag.primitive("BumpStaged") | _HAS_BUMP | _IS_GIT
+    _COMMIT_BUMP = _flag.primitive("BumpCommitted") | _ADD_BUMP
+    _HAS_BAD_TAG = _flag.primitive("BadTag") | _IS_GIT
+    _HAS_GOOD_TAG = _flag.primitive("GoodTag") | _IS_GIT
 
     NOTHING = _NOTHING
     JUST_GIT = _IS_GIT
@@ -118,6 +159,24 @@ class TestDataMaker(object):
     BAD_VERSION = "0.0.2"
 
     def __call__(self, func):
+        """
+        Create a starting state for a test method.
+
+        Wrap a test method in a decorator which sets up a starting state
+        matching what that indicated by self.state.
+
+        Arguments
+        ---------
+            func {Callable[unittest.TestCase]} -- The test method to be
+                                                  wrapped.
+
+        Returns
+        -------
+            {Callable[unittest.TestCase]} -- A decorated test method which
+                                             creates the given starting state
+                                             for the test before running it.
+
+        """
         def make_data():
             if self._IS_GIT(self.state):
                 # Create git repo
@@ -156,7 +215,7 @@ class TestDataMaker(object):
                 # Add matching version tag
                 repo.create_tag(self.GOOD_VERSION, ref=repo.active_branch)
 
-        state_name = self.get_state_name(self.state)
+        state_name = self._get_state_name(self.state)
         @functools.wraps(func)
         def wrapper(slf, *args, **kwargs):
             make_data()
@@ -169,31 +228,95 @@ class TestDataMaker(object):
         return wrapper
 
     @classmethod
-    def iter_states(cls):
+    def _iter_states(cls):
         for attr_name in dir(cls):
             if attr_name.startswith("_"):
                 continue
             cls_attr = getattr(cls, attr_name)
-            if not isinstance(cls_attr, Flag):
+            if not isinstance(cls_attr, cls._flag):
                 continue
             yield (attr_name, cls_attr)
 
     @classmethod
-    def get_state_name(cls, state):
-        for state_name, state_flag in cls.iter_states():
+    def _get_state_name(cls, state):
+        for state_name, state_flag in cls._iter_states():
             if state_flag.flag == state.flag:
                 return state_name
         return None
 
     @classmethod
-    def state_checker(cls):
+    def _state_checker(cls, state_list):
         states = {}
-        for attr_name, cls_attr in cls.iter_states():
-            states[cls_attr] = [False, attr_name]
+        state_list = set(state_list)
+        for attr_name, cls_attr in cls._iter_states():
+            if cls_attr in state_list:
+                states[cls_attr] = [False, attr_name]
         return states
 
     @classmethod
-    def make_state_checker(cls, klass):
+    def make_state_checker(cls, arg=None):
+        """
+        Decorate a TestCase that makes test data with TestDataMaker.
+
+        Decorate a unittest.TestCase with this class method to check that all
+        possible starting states for repositories are tested by the TestCase.
+
+        If this decorator is given an argument, it must be a list of states. It
+
+
+        Possible ways to call:
+            @TestDataMaker.make_state_checker
+            class MyTestCase(unittest.TestCase):
+                # Checks that all starting states of TestDataMaker
+                # are tested by MyTestCase.
+                ...
+
+            @TestDataMaker.make_state_checker()
+            class MyTestCase(unittest.TestCase):
+                # Checks that all starting states of TestDataMaker
+                # are tested by MyTestCase.
+                ...
+
+            @TestDataMaker.make_state_checker([TestDataMaker.NOTHING,
+                                               TestDataMaker.JUST_GIT])
+            class MyTestCase(unittest.TestCase):
+                # Checks to validate that the starting states given in
+                # the list are tested.
+                ...
+
+
+        Arguments
+        ---------
+            arg {Optional[list[Flag]]} -- Required states to be tested by this
+                                          TestCase. If not given then all
+                                          states belonging to TestDataMaker
+                                          are expected.
+
+        Returns
+        -------
+            {unittest.TestCase} -- A decorated TestCase class.
+
+        """
+        if isinstance(arg, list):
+            return lambda klass: cls._make_state_checker(klass, arg)
+        elif arg is None:
+            return cls._make_state_checker
+        elif not isinstance(arg, type):
+            raise TypeError(
+                "Must decorate a subclass of unittest.TestCase")
+        elif not issubclass(arg, unittest.TestCase):
+            raise TypeError(
+                "Decorated class must be a subclass of unittest.TestCase")
+        else:
+            return cls._make_state_checker(arg)
+
+    @classmethod
+    def _make_state_checker(cls, klass, state_list=None):
+        if state_list is None:
+            state_list = list(state for _, state in cls._iter_states())
+        else:
+            assert all(isinstance(s, cls._flag) for s in state_list)
+
         if hasattr(klass, "setUpClass"):
             old_setup = klass.setUpClass
         else:
@@ -202,7 +325,7 @@ class TestDataMaker(object):
         @functools.wraps(klass.setUpClass)
         def wrapper(kls):
             old_setup()
-            kls.state_checker = cls.state_checker()
+            kls.state_checker = cls._state_checker(state_list)
             kls.tests_run = set()
         klass.setUpClass = classmethod(wrapper)
 
@@ -214,7 +337,7 @@ class TestDataMaker(object):
         @functools.wraps(klass.tearDownClass)
         def td_wrapper(kls):
             old_teardown()
-            if len(kls.testDataWrapperMethods) == len(kls.tests_run):
+            if len(kls.testDataWrapperMethods) >= len(kls.tests_run):
                 errors = []
                 for [tested, state_name] in kls.state_checker.itervalues():
                     if not tested:
