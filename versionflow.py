@@ -82,7 +82,10 @@ def init(config, create):
 @click.pass_obj
 def check(config):
     """Check if the versionflow state of this package is OK."""
-    VersionFlowChecker.from_config(config, False).process()
+    try:
+        VersionFlowChecker.from_config(config, False).process()
+    except VersionFlowChecker.VfStatusError:
+        raise click.Abort()
 
 
 @attr.s
@@ -129,25 +132,28 @@ class VersionFlowChecker(object):
     config = attr.ib()
     create = attr.ib(default=False)
 
-    class NoRepo(RuntimeError):
+    class VfStatusError(RuntimeError):
         pass
 
-    class DirtyRepo(RuntimeError):
+    class NoRepo(VfStatusError):
         pass
 
-    class NoGitFlow(RuntimeError):
+    class DirtyRepo(VfStatusError):
         pass
 
-    class NoBumpVersion(RuntimeError):
+    class NoGitFlow(VfStatusError):
         pass
 
-    class BumpNotInGit(RuntimeError):
+    class NoBumpVersion(VfStatusError):
         pass
 
-    class NoVersionTags(RuntimeError):
+    class BumpNotInGit(VfStatusError):
         pass
 
-    class BadVersionTags(RuntimeError):
+    class NoVersionTags(VfStatusError):
+        pass
+
+    class BadVersionTags(VfStatusError):
         pass
 
     @classmethod
