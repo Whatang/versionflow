@@ -1,5 +1,8 @@
-import attr
 import functools
+import os
+
+import attr
+from backports import tempfile
 
 
 @attr.s
@@ -157,3 +160,16 @@ class ActionDecorator(object):
             after.__name__ = after_name
             then.after(after)
         return then
+
+
+@ActionDecorator
+def mktempdir(ctx):
+    ctx.orig_dir = os.getcwd()
+    ctx.tmp_dir = tempfile.TemporaryDirectory()
+    os.chdir(ctx.tmp_dir.name)
+
+
+@mktempdir.after
+def remove_tmp_dir(ctx):
+    os.chdir(ctx.orig_dir)
+    ctx.tmp_dir.cleanup()
