@@ -1,621 +1,336 @@
 import unittest
-import functools
-import os
+
 import click
 import click.testing
 import git
 import gitflow.core
-import attr
-from versionflow import VersionFlowChecker, Config
 
+import versionflow
+from action_decorator import ActionDecorator, mktempdir
 
-def setup_with_context_manager(testcase, cm):
-    """Use a contextmanager to setUp a test case."""
-    val = cm.__enter__()
-    testcase.addCleanup(cm.__exit__, None, None, None)
-    return val
 
+@ActionDecorator
+def do_nothing(ctx):
+    pass
 
-class TestVersion(unittest.TestCase):
-    def setUp(self):
-        pass
 
-    def tearDown(self):
-        pass
+@ActionDecorator
+def make_git(ctx):
+    ctx.repo = git.Repo.init()
 
-    def testFromBumpversion(self):
-        pass
 
+@make_git.after
+def close_git(ctx):
+    ctx.repo.close()
 
-class TestBumpVersionWrapper(unittest.TestCase):
-    def setUp(self):
-        pass
 
-    def tearDown(self):
-        pass
+@ActionDecorator
+def do_initial_commit(ctx):
+    assert not ctx.repo.is_dirty()
+    with open("initial_file", "w") as handle:
+        print >> handle, "initial"
+    ctx.repo.index.add(["initial_file"])
+    ctx.repo.index.commit("Initial commit")
 
-    def testFromExisting(self):
-        pass
 
-    def testInitialise(self):
-        pass
-
-
-def make_flag_class(classname):
-    @attr.s(frozen=True)
-    class Flag(object):
-        """
-        A flag representing a possible state.
-
-        Flags can be either "primitive" or "combined": each "primitive" flag
-        represents an atomic state, i.e. that a single condition holds. Flags can
-        be combined to represent states where multiple conditions hold.
-
-        To combine two Flags to represent a state where all their conditions hold
-        simultaneously, use the | operator.
-
-        Call a Flag instance f with another instance g to check whether all of f's
-        conditions hold in the state represented by g.
-        """
-
-        @attr.s(frozen=True)
-        class _flag_val(object):
-            _value = attr.ib()
-            _next_value = 1
-
-            @classmethod
-            def next_primitive(cls):
-                flag = cls(cls._next_value)
-                cls._next_value *= 2
-                return flag
-
-            def __cmp__(self, other):
-                if isinstance(other, type(self)):
-                    return cmp(self._value, other._value)
-                return cmp(self._value, other)
-
-            def __or__(self, other):
-                return type(self)(self._value | other._value)
-
-            def __and__(self, other):
-                return type(self)(self._value & other._value)
-
-        def _check_is_flag(f, _, v):
-            if not isinstance(v, f._flag_val):
-                raise TypeError("Must be flag val")
-
-        name = attr.ib()
-        flag = attr.ib(validator=_check_is_flag)
-
-        @classmethod
-        def primitive(cls, name):
-            flag = cls._flag_val.next_primitive()
-            return cls(name, flag)
-
-        @classmethod
-        def nothing(cls, name):
-            return cls(name, cls._flag_val(0))
-
-        def __call__(self, state):
-            if self.flag == 0:
-                return state.flag == 0
-            answer = ((self.flag & state.flag) == self.flag)
-            return answer
-
-        def __or__(self, other):
-            if other.flag == 0:
-                return self
-            if self.flag == 0:
-                return other
-            return Flag(self.name + "|" + other.name,
-                        self.flag | other.flag)
-
-        def __str__(self):
-            return self.name
-    Flag.__name__ = classname
-    return Flag
-
-
-@attr.s
-class TestDataMaker(object):
-    state = attr.ib()
-
-    _flag = make_flag_class("TestDataFlag")
-
-    _NOTHING = _flag.nothing("Nothing")
-    _IS_GIT = _flag.primitive("IsGitRepo")
-    _HAS_INITIAL_COMMIT = _flag.primitive("InitialCommit") | _IS_GIT
-    _IS_DIRTY = _flag.primitive("IsDirty") | _IS_GIT
-    _IS_GITFLOW = _flag.primitive("GitFlow") | _IS_GIT
-    _HAS_BUMP = _flag.primitive("Bump")
-    _ADD_BUMP = _flag.primitive("BumpStaged") | _HAS_BUMP | _IS_GIT
-    _COMMIT_BUMP = _flag.primitive("BumpCommitted") | _ADD_BUMP
-    _HAS_BAD_TAG = _flag.primitive("BadTag") | _IS_GIT
-    _HAS_GOOD_TAG = _flag.primitive("GoodTag") | _IS_GIT
-
-    NOTHING = _NOTHING
-    JUST_GIT = _IS_GIT
-    DIRTY_EMPTY_GIT_REPO = _IS_DIRTY
-    DIRTY_GIT_REPO = _HAS_INITIAL_COMMIT | _IS_DIRTY
-    CLEAN_GIT_REPO = _HAS_INITIAL_COMMIT
-    DIRTY_EMPTY_GITFLOW_REPO = _IS_GITFLOW | _IS_DIRTY
-    DIRTY_GITFLOW_REPO = _IS_GITFLOW | _HAS_INITIAL_COMMIT | _IS_DIRTY
-    CLEAN_EMPTY_GITFLOW = _IS_GITFLOW
-    CLEAN_GITFLOW = _IS_GITFLOW | _HAS_INITIAL_COMMIT
-    JUST_BUMP = _HAS_BUMP
-    EMPTY_GIT_AND_BUMP = _IS_GIT | _HAS_BUMP
-    GIT_AND_DIRTY_BUMP = _IS_GIT | _ADD_BUMP
-    GIT_AND_BUMP = _HAS_INITIAL_COMMIT | _COMMIT_BUMP
-    EMPTY_GITFLOW_AND_BUMP = _IS_GITFLOW | _HAS_BUMP
-    GITFLOW_AND_DIRTY_BUMP = _IS_GITFLOW | _ADD_BUMP
-    GITFLOW_AND_BUMP = _IS_GITFLOW | _HAS_INITIAL_COMMIT | _COMMIT_BUMP
-    EMPTY_BAD_TAG_AND_BUMP = _HAS_BAD_TAG | _IS_GITFLOW | _COMMIT_BUMP
-    BAD_TAG_AND_BUMP = (_HAS_BAD_TAG | _IS_GITFLOW |
-                        _COMMIT_BUMP | _HAS_INITIAL_COMMIT)
-    GOOD_REPO = (_HAS_GOOD_TAG | _IS_GITFLOW |
-                 _COMMIT_BUMP | _HAS_INITIAL_COMMIT)
-
-    GOOD_VERSION = "1.0.2"
-    BAD_VERSION = "0.0.2"
-
-    def __call__(self, func):
-        """
-        Create a starting state for a test method.
-
-        Wrap a test method in a decorator which sets up a starting state
-        matching what that indicated by self.state.
-
-        Arguments
-        ---------
-            func {Callable[unittest.TestCase]} -- The test method to be
-                                                  wrapped.
-
-        Returns
-        -------
-            {Callable[unittest.TestCase]} -- A decorated test method which
-                                             creates the given starting state
-                                             for the test before running it.
-
-        """
-        def make_data():
-            if self._IS_GIT(self.state):
-                # Create git repo
-                repo = git.Repo.init()
-            if self._HAS_INITIAL_COMMIT(self.state):
-                # Make an initial commit
-                with open("initial_file", "w") as handle:
-                    print >> handle, "initial"
-                repo.index.add(["initial_file"])
-                repo.index.commit("Initial commit")
-            if self._IS_GITFLOW(self.state):
-                # Initialize git flow
-                gf_wrapper = gitflow.core.GitFlow()
-                gf_wrapper.init()
-            if self._IS_DIRTY(self.state):
-                # Make a dirty repo
-                with open("dirty", "w") as handle:
-                    print >> handle, "dirty"
-                repo.index.add(["dirty"])
-            if self._HAS_BUMP(self.state):
-                # Add bumpversion config
-                with open("setup.cfg", "w") as handle:
-                    print >> handle, "[bumpversion]"
-                    print >> handle, "current_version=" + self.GOOD_VERSION
-            if self._ADD_BUMP(self.state):
-                repo.index.add(["setup.cfg"])
-                if self._COMMIT_BUMP(self.state):
-                    repo.index.commit("Add bumpversion info")
-            if self._HAS_BAD_TAG(self.state):
-                # Add non-matching tag
-                repo.create_tag(self.BAD_VERSION, ref=repo.active_branch)
-            if self._HAS_GOOD_TAG(self.state):
-                if self._HAS_BAD_TAG(self.state):
-                    # Remove non-matching tag
-                    repo.delete_tag(self.BAD_VERSION)
-                # Add matching version tag
-                repo.create_tag(self.GOOD_VERSION, ref=repo.active_branch)
-
-        state_name = self._get_state_name(self.state)
-        @functools.wraps(func)
-        def wrapper(slf, *args, **kwargs):
-            make_data()
-            slf.state_checker[self.state][0] = True
-            if state_name is not None:
-                slf.tests_run.add(state_name)
-            return func(slf, *args, **kwargs)
-        if state_name is not None:
-            wrapper.tested_state = state_name
-        return wrapper
-
-    @classmethod
-    def _iter_states(cls):
-        for attr_name in dir(cls):
-            if attr_name.startswith("_"):
-                continue
-            cls_attr = getattr(cls, attr_name)
-            if not isinstance(cls_attr, cls._flag):
-                continue
-            yield (attr_name, cls_attr)
-
-    @classmethod
-    def _get_state_name(cls, state):
-        for state_name, state_flag in cls._iter_states():
-            if state_flag.flag == state.flag:
-                return state_name
-        return None
-
-    @classmethod
-    def _state_checker(cls, state_list):
-        states = {}
-        state_list = set(state_list)
-        for attr_name, cls_attr in cls._iter_states():
-            if cls_attr in state_list:
-                states[cls_attr] = [False, attr_name]
-        return states
-
-    @classmethod
-    def make_state_checker(cls, arg=None):
-        """
-        Decorate a TestCase that makes test data with TestDataMaker.
-
-        Decorate a unittest.TestCase with this class method to check that all
-        possible starting states for repositories are tested by the TestCase.
-
-        If this decorator is given an argument, it must be a list of states. It
-
-
-        Possible ways to call:
-            @TestDataMaker.make_state_checker
-            class MyTestCase(unittest.TestCase):
-                # Checks that all starting states of TestDataMaker
-                # are tested by MyTestCase.
-                ...
-
-            @TestDataMaker.make_state_checker()
-            class MyTestCase(unittest.TestCase):
-                # Checks that all starting states of TestDataMaker
-                # are tested by MyTestCase.
-                ...
-
-            @TestDataMaker.make_state_checker([TestDataMaker.NOTHING,
-                                               TestDataMaker.JUST_GIT])
-            class MyTestCase(unittest.TestCase):
-                # Checks to validate that the starting states given in
-                # the list are tested.
-                ...
-
-
-        Arguments
-        ---------
-            arg {Optional[list[Flag]]} -- Required states to be tested by this
-                                          TestCase. If not given then all
-                                          states belonging to TestDataMaker
-                                          are expected.
-
-        Returns
-        -------
-            {unittest.TestCase} -- A decorated TestCase class.
-
-        """
-        if isinstance(arg, list):
-            return lambda klass: cls._make_state_checker(klass, arg)
-        elif arg is None:
-            return cls._make_state_checker
-        elif not isinstance(arg, type):
-            raise TypeError(
-                "Must decorate a subclass of unittest.TestCase")
-        elif not issubclass(arg, unittest.TestCase):
-            raise TypeError(
-                "Decorated class must be a subclass of unittest.TestCase")
-        else:
-            return cls._make_state_checker(arg)
-
-    @classmethod
-    def _make_state_checker(cls, klass, state_list=None):
-        if state_list is None:
-            state_list = list(state for _, state in cls._iter_states())
-        else:
-            assert all(isinstance(s, cls._flag) for s in state_list)
-
-        if hasattr(klass, "setUpClass"):
-            old_setup = klass.setUpClass
-        else:
-            def old_setup(): return None
-
-        @functools.wraps(klass.setUpClass)
-        def wrapper(kls):
-            old_setup()
-            kls.state_checker = cls._state_checker(state_list)
-            kls.tests_run = set()
-        klass.setUpClass = classmethod(wrapper)
-
-        if hasattr(klass, "tearDownClass"):
-            old_teardown = klass.tearDownClass
-        else:
-            def old_teardown(): return None
-
-        @functools.wraps(klass.tearDownClass)
-        def td_wrapper(kls):
-            old_teardown()
-            if len(kls.testDataWrapperMethods) >= len(kls.tests_run):
-                errors = []
-                for [tested, state_name] in kls.state_checker.itervalues():
-                    if not tested:
-                        errors.append(state_name)
-                assert errors == [], (", ".join(errors)) + " not tested"
-        klass.tearDownClass = classmethod(td_wrapper)
-
-        klass.testDataWrapperMethods = set()
-
-        for attr_name in dir(klass):
-            if not attr_name.startswith("test_"):
-                continue
-            test_method = getattr(klass, attr_name)
-            if hasattr(test_method, "tested_state"):
-                state_name = getattr(test_method, "tested_state")
-                klass.testDataWrapperMethods.add(state_name)
-        return klass
-
-
-@TestDataMaker.make_state_checker
-class TestVersionFlowChecker_Check(unittest.TestCase):
+@ActionDecorator
+def init_gitflow(ctx):
+    ctx.gf_wrapper = gitflow.core.GitFlow()
+    ctx.gf_wrapper.init()
 
+
+@init_gitflow.after
+def close_gitflow(ctx):
+    ctx.gf_wrapper.repo.close()
+
+
+@ActionDecorator
+def make_dirty(ctx):
+    # Make a dirty repo
+    with open("dirty", "w") as handle:
+        print >> handle, "dirty"
+    ctx.repo.index.add(["dirty"])
+
+
+GOOD_VERSION = "1.0.2"
+BAD_VERSION = "0.0.2"
+
+
+@ActionDecorator
+def write_bumpversion(ctx):
+    # Add bumpversion config
+    if not hasattr(ctx, "setup_cfg"):
+        ctx.setup_cfg = "setup.cfg"
+    with open(ctx.setup_cfg, "w") as handle:
+        print >> handle, "[bumpversion]"
+        print >> handle, "current_version=" + GOOD_VERSION
+
+
+@ActionDecorator
+def stage_bumpversion(ctx):
+    assert not ctx.repo.is_dirty()
+    ctx.repo.index.add([ctx.setup_cfg])
+
+
+@ActionDecorator
+def commit_bumpversion(ctx):
+    ctx.repo.index.commit("Add bumpversion info")
+
+
+@ActionDecorator
+def set_bad_tag(ctx):
+    # Add non-matching tag
+    ctx.repo.create_tag(BAD_VERSION, ref=ctx.repo.active_branch)
+
+
+@ActionDecorator
+def set_good_tag(ctx):
+    # Add matching version tag
+    ctx.repo.create_tag(GOOD_VERSION, ref=ctx.repo.active_branch)
+
+# ActionDecorators can be combined
+#
+#       c = action1 | action2
+#
+# results in a new action c. When c is invoked it does action1
+# then action2.
+
+
+do_nothing = mktempdir | do_nothing
+make_git = mktempdir | make_git
+
+dirty_empty_git = make_git | make_dirty
+clean_git = make_git | do_initial_commit
+dirty_git = clean_git | make_dirty
+
+empty_gitflow = make_git | init_gitflow
+dirty_empty_gitflow = empty_gitflow | make_dirty
+clean_gitflow = empty_gitflow | do_initial_commit
+dirty_gitflow = clean_gitflow | make_dirty
+
+just_bump = mktempdir | write_bumpversion
+
+git_with_untracked_bump = make_git | write_bumpversion
+git_with_dirty_bump = git_with_untracked_bump | stage_bumpversion
+git_with_bump = git_with_dirty_bump | commit_bumpversion
+
+gitflow_with_untracked_bump = empty_gitflow | write_bumpversion
+gitflow_with_dirty_bump = gitflow_with_untracked_bump | stage_bumpversion
+gitflow_with_bump = gitflow_with_dirty_bump | commit_bumpversion
+
+
+add_bumpversion = write_bumpversion | stage_bumpversion | commit_bumpversion
+
+empty_bad_tag_and_bump = empty_gitflow | add_bumpversion | set_bad_tag
+bad_tag_and_bump = clean_gitflow | add_bumpversion | set_bad_tag
+
+good_base_repo = gitflow_with_bump | set_good_tag
+
+
+class Test_Init(unittest.TestCase):
     def setUp(self):
         self.runner = click.testing.CliRunner()
-        self.fs = setup_with_context_manager(
-            self, self.runner.isolated_filesystem())
-        self.handler = VersionFlowChecker.from_config(config=Config(
-            os.getcwd(), bumpversion_config="setup.cfg"), create=False)
 
-    @TestDataMaker(TestDataMaker.NOTHING)
-    def test_NoGit(self):
-        self.assertRaises(VersionFlowChecker.NoRepo, self.handler.process)
+    def process(self):
+        return self.runner.invoke(
+            versionflow.cli,
+            ["check"],
+            catch_exceptions=False)
 
-    @TestDataMaker(TestDataMaker.JUST_GIT)
-    def test_JustGit(self):
-        self.assertRaises(VersionFlowChecker.NoGitFlow, self.handler.process)
+    def check_error(self, error_class):
+        self.assertRaises(error_class, self.process)
 
-    @TestDataMaker(TestDataMaker.DIRTY_EMPTY_GIT_REPO)
-    def test_DirtyEmptyGit(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
+# TODO: work out how to test for success in these cases
 
-    @TestDataMaker(TestDataMaker.DIRTY_GIT_REPO)
-    def test_DirtyGit(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
+#     @do_nothing
+#     def test_InitNoGit(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
 
-    @TestDataMaker(TestDataMaker.CLEAN_GIT_REPO)
-    def test_CleanGit(self):
-        self.assertRaises(VersionFlowChecker.NoGitFlow, self.handler.process)
+#     @make_git
+#     def test_InitJustGit(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version,
+#                          "0.0.0")
 
-    @TestDataMaker(TestDataMaker.CLEAN_EMPTY_GITFLOW)
-    def test_EmptyGitflow(self):
-        self.assertRaises(
-            VersionFlowChecker.NoBumpVersion,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.DIRTY_EMPTY_GITFLOW_REPO)
-    def test_DirtyEmptyGitflow(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
-
-    @TestDataMaker(TestDataMaker.DIRTY_GITFLOW_REPO)
-    def test_DirtyGitflow(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
-
-    @TestDataMaker(TestDataMaker.CLEAN_GITFLOW)
-    def test_CleanGitflow(self):
-        self.assertRaises(
-            VersionFlowChecker.NoBumpVersion,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.JUST_BUMP)
-    def test_JustBump(self):
-        self.assertRaises(
-            VersionFlowChecker.NoRepo,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.EMPTY_GIT_AND_BUMP)
-    def test_EmptyGitAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.NoGitFlow,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.GIT_AND_DIRTY_BUMP)
-    def test_GitAndDirtyBump(self):
-        self.assertRaises(
-            VersionFlowChecker.DirtyRepo,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.GIT_AND_BUMP)
-    def test_GitAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.NoGitFlow,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.EMPTY_GITFLOW_AND_BUMP)
-    def test_EmptyGitFlowAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.BumpNotInGit,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.GITFLOW_AND_DIRTY_BUMP)
-    def test_GitFlowAndDirtyBump(self):
-        self.assertRaises(
-            VersionFlowChecker.DirtyRepo,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.GITFLOW_AND_BUMP)
-    def test_GitFlowAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.NoVersionTags,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.EMPTY_BAD_TAG_AND_BUMP)
-    def test_EmptyBadTagAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.BadVersionTags,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.BAD_TAG_AND_BUMP)
-    def test_BadTagAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.BadVersionTags,
-            self.handler.process)
-
-    @TestDataMaker(TestDataMaker.GOOD_REPO)
-    def test_GoodRepo(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(
-            vf_repo.bv_wrapper.current_version,
-            TestDataMaker.GOOD_VERSION)
-
-
-@TestDataMaker.make_state_checker
-class Test_VersionFlowChecker_Initialise(unittest.TestCase):
-    def setUp(self):
-        self.runner = click.testing.CliRunner()
-        self.fs = setup_with_context_manager(
-            self, self.runner.isolated_filesystem())
-        self.handler = VersionFlowChecker.from_config(config=Config(
-            os.getcwd(), bumpversion_config="setup.cfg"), create=True)
-
-    @TestDataMaker(TestDataMaker.NOTHING)
-    def test_InitNoGit(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
-
-    @TestDataMaker(TestDataMaker.JUST_GIT)
-    def test_InitJustGit(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version,
-                         "0.0.0")
-
-    @TestDataMaker(TestDataMaker.DIRTY_EMPTY_GIT_REPO)
+    @dirty_empty_git
     def test_InitDirtyEmptyGit(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
+        self.check_error(versionflow.DirtyRepo)
 
-    @TestDataMaker(TestDataMaker.DIRTY_GIT_REPO)
+    @dirty_git
     def test_InitDirtyGit(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
+        self.check_error(versionflow.DirtyRepo)
 
-    @TestDataMaker(TestDataMaker.CLEAN_GIT_REPO)
-    def test_InitCleanGit(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
+#     @clean_git
+#     def test_InitCleanGit(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
 
-    @TestDataMaker(TestDataMaker.CLEAN_EMPTY_GITFLOW)
-    def test_InitEmptyGitflow(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version,
-                         "0.0.0")
+#     @empty_gitflow
+#     def test_InitEmptyGitflow(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version,
+#                          "0.0.0")
 
-    @TestDataMaker(TestDataMaker.DIRTY_EMPTY_GITFLOW_REPO)
+    @dirty_empty_gitflow
     def test_InitDirtyEmptyGitflow(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
+        self.check_error(versionflow.DirtyRepo)
 
-    @TestDataMaker(TestDataMaker.DIRTY_GITFLOW_REPO)
+    @dirty_gitflow
     def test_InitDirtyGitflow(self):
-        self.assertRaises(VersionFlowChecker.DirtyRepo, self.handler.process)
+        self.check_error(versionflow.DirtyRepo)
 
-    @TestDataMaker(TestDataMaker.CLEAN_GITFLOW)
-    def test_InitCleanGitflow(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
+#     @clean_gitflow
+#     def test_InitCleanGitflow(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
 
-    @TestDataMaker(TestDataMaker.JUST_BUMP)
-    def test_InitJustBump(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version,
-                         TestDataMaker.GOOD_VERSION)
+#     @just_bump
+#     def test_InitJustBump(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version,
+#                          TestDataMaker.GOOD_VERSION)
 
-    @TestDataMaker(TestDataMaker.EMPTY_GIT_AND_BUMP)
-    def test_InitEmptyGitAndBump(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(
-            vf_repo.bv_wrapper.current_version,
-            TestDataMaker.GOOD_VERSION)
+#     @git_with_untracked_bump
+#     def test_InitEmptyGitAndBump(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(
+#             vf_repo.bv_wrapper.current_version,
+#             TestDataMaker.GOOD_VERSION)
 
-    @TestDataMaker(TestDataMaker.GIT_AND_DIRTY_BUMP)
+    @git_with_dirty_bump
     def test_InitGitAndDirtyBump(self):
-        self.assertRaises(
-            VersionFlowChecker.DirtyRepo,
-            self.handler.process)
+        self.check_error(versionflow.DirtyRepo)
 
-    @TestDataMaker(TestDataMaker.GIT_AND_BUMP)
-    def test_InitGitAndBump(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version,
-                         TestDataMaker.GOOD_VERSION)
+#     @git_with_bump
+#     def test_InitGitAndBump(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version,
+#                          TestDataMaker.GOOD_VERSION)
 
-    @TestDataMaker(TestDataMaker.EMPTY_GITFLOW_AND_BUMP)
-    def test_InitEmptyGitFlowAndBump(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version,
-                         TestDataMaker.GOOD_VERSION)
+#     @gitflow_with_untracked_bump
+#     def test_InitEmptyGitFlowAndBump(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version,
+#                          TestDataMaker.GOOD_VERSION)
 
-    @TestDataMaker(TestDataMaker.GITFLOW_AND_DIRTY_BUMP)
+    @gitflow_with_dirty_bump
     def test_InitGitFlowAndDirtyBump(self):
-        self.assertRaises(
-            VersionFlowChecker.DirtyRepo,
-            self.handler.process)
+        self.check_error(versionflow.DirtyRepo)
 
-    @TestDataMaker(TestDataMaker.GITFLOW_AND_BUMP)
-    def test_InitGitFlowAndBump(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(vf_repo.bv_wrapper.current_version,
-                         TestDataMaker.GOOD_VERSION)
+#     @gitflow_with_bump
+#     def test_InitGitFlowAndBump(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(vf_repo.bv_wrapper.current_version,
+#                          TestDataMaker.GOOD_VERSION)
 
-    @TestDataMaker(TestDataMaker.EMPTY_BAD_TAG_AND_BUMP)
+    @empty_bad_tag_and_bump
     def test_InitEmptyBadTagAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.BadVersionTags,
-            self.handler.process)
+        self.check_error(versionflow.BadVersionTags)
 
-    @TestDataMaker(TestDataMaker.BAD_TAG_AND_BUMP)
+    @bad_tag_and_bump
     def test_InitBadTagAndBump(self):
-        self.assertRaises(
-            VersionFlowChecker.BadVersionTags,
-            self.handler.process)
+        self.check_error(versionflow.BadVersionTags)
 
-    @TestDataMaker(TestDataMaker.GOOD_REPO)
-    def test_InitRepoAlreadyGood(self):
-        vf_repo = self.handler.process()
-        self.assertEqual(
-            vf_repo.bv_wrapper.current_version,
-            TestDataMaker.GOOD_VERSION)
+#     @good_base_repo
+#     def test_InitRepoAlreadyGood(self):
+#         vf_repo = self.handler.process()
+#         self.assertEqual(
+#             vf_repo.bv_wrapper.current_version,
+#             TestDataMaker.GOOD_VERSION)
 
 
-class Test_VersionFlowRepo(unittest.TestCase):
+class Test_Check(unittest.TestCase):
+
     def setUp(self):
-        pass
+        self.runner = click.testing.CliRunner()
 
-    def tearDown(self):
-        pass
+    def process(self):
+        return self.runner.invoke(
+            versionflow.cli,
+            ["check"],
+            catch_exceptions=False)
 
-    def test_process_action(self):
-        pass
+    def check_error(self, error_class):
+        self.assertRaises(error_class, self.process)
 
+    @do_nothing
+    def test_NoGit(self):
+        self.check_error(versionflow.NoRepo)
 
-class TestCommandLine(unittest.TestCase):
-    def setUp(self):
-        pass
+    @make_git
+    def test_JustGit(self):
+        self.check_error(versionflow.NoGitFlow)
 
-    def tearDown(self):
-        pass
+    @dirty_empty_git
+    def test_DirtyEmptyGit(self):
+        self.check_error(versionflow.DirtyRepo)
 
-    def testCheck(self):
-        pass
+    @dirty_git
+    def test_DirtyGit(self):
+        self.check_error(versionflow.DirtyRepo)
 
-    def testInit(self):
-        pass
+    @clean_git
+    def test_CleanGit(self):
+        self.check_error(versionflow.NoGitFlow)
 
-    def testPatch(self):
-        pass
+    @empty_gitflow
+    def test_EmptyGitflow(self):
+        self.check_error(versionflow.NoBumpVersion)
 
-    def testMinor(self):
-        pass
+    @dirty_empty_gitflow
+    def test_DirtyEmptyGitflow(self):
+        self.check_error(versionflow.DirtyRepo)
 
-    def testMajor(self):
-        pass
+    @dirty_gitflow
+    def test_DirtyGitflow(self):
+        self.check_error(versionflow.DirtyRepo)
+
+    @clean_gitflow
+    def test_CleanGitflow(self):
+        self.check_error(versionflow.NoBumpVersion)
+
+    @just_bump
+    def test_JustBump(self):
+        self.check_error(
+            versionflow.NoRepo)
+
+    @git_with_untracked_bump
+    def test_EmptyGitAndBump(self):
+        self.check_error(versionflow.NoGitFlow)
+
+    @git_with_dirty_bump
+    def test_GitAndDirtyBump(self):
+        self.check_error(versionflow.DirtyRepo)
+
+    @git_with_bump
+    def test_GitAndBump(self):
+        self.check_error(versionflow.NoGitFlow)
+
+    @gitflow_with_untracked_bump
+    def test_EmptyGitFlowAndBump(self):
+        self.check_error(versionflow.BumpNotInGit)
+
+    @gitflow_with_dirty_bump
+    def test_GitFlowAndDirtyBump(self):
+        self.check_error(versionflow.DirtyRepo)
+
+    @gitflow_with_bump
+    def test_GitFlowAndBump(self):
+        self.check_error(versionflow.NoVersionTags)
+
+    @empty_bad_tag_and_bump
+    def test_EmptyBadTagAndBump(self):
+        self.check_error(versionflow.BadVersionTags)
+
+    @bad_tag_and_bump
+    def test_BadTagAndBump(self):
+        self.check_error(versionflow.BadVersionTags)
+
+    @good_base_repo
+    def test_GoodRepo(self):
+        result = self.process()
+        self.assertEqual(result.exit_code, 0)
 
 
 if __name__ == "__main__":
