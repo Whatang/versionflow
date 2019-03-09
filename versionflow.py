@@ -1,7 +1,7 @@
 import os
 import subprocess
 import ConfigParser
-from contextlib import closing
+from contextlib import contextmanager
 
 import attr
 import click
@@ -76,7 +76,8 @@ class Config(object):
     repo_dir = attr.ib(default=lambda: os.path.abspath(os.getcwd()))
     bumpversion_config = attr.ib(default=DEFAULT_BV_FILE)
 
-    def check_git(self, create):
+    @contextmanager
+    def get_git_context(self, create):
         click.echo("Checking if this is a clean git repo...")
         try:
             repo = git.Repo(self.repo_dir)
@@ -91,9 +92,13 @@ class Config(object):
                 click.echo("- Initialised this directory as a git repo")
             else:
                 raise NoRepo()
-        return repo
+        try:
+            yield repo
+        finally:
+            repo.close()
 
-    def check_gitflow(self, create):
+    @contextmanager
+    def get_gitflow_context(self, create):
         click.echo("Checking if this is a git flow repo...")
         gf = gitflow.core.GitFlow()
         if gf.is_initialized():
@@ -103,9 +108,11 @@ class Config(object):
             gf.init()
             click.echo("- Initialised this directory as a git flow repo")
         else:
-            gf.repo.close()
             raise NoGitFlow()
-        return gf
+        try:
+            yield gf
+        finally:
+            gf.repo.close()
 
     def check_bumpversion(self, create, repo):
         click.echo("Checking if bumpversion is initialised...")
@@ -194,7 +201,7 @@ def cli(ctx, repo_dir, bumpversion_config):
 
 
 def _do_status(config, create):
-    with closing(VersionFlowRepo.create_checked(config, create)):
+    with VersionFlowRepo.create_checked(config, create):
         pass
 
 
@@ -219,20 +226,21 @@ class VersionFlowRepo(object):
     bv_wrapper = attr.ib()
 
     @classmethod
+    @contextmanager
     def create_checked(cls, config=None, create=False):
         if config is None:
             config = Config()
         # Check this is a clean git repo
         try:
-            with closing(config.check_git(create)) as repo:
+            with config.get_git_context(create) as repo:
                 # Check if git flow is initialised
-                gf_wrapper = config.check_gitflow(create)
-                # Check that there is a bumpversion section
-                bv_wrapper = config.check_bumpversion(create, repo)
-            # Check that there is a version tag, and that it is
-            # correct as per the bumpversion section
-            config.check_version_tag(create, bv_wrapper, gf_wrapper)
-            return cls(config, gf_wrapper, bv_wrapper)
+                with config.get_gitflow_context(create) as gf_wrapper:
+                    # Check that there is a bumpversion section
+                    bv_wrapper = config.check_bumpversion(create, repo)
+                    # Check that there is a version tag, and that it is
+                    # correct as per the bumpversion section
+                    config.check_version_tag(create, bv_wrapper, gf_wrapper)
+                    yield cls(config, gf_wrapper, bv_wrapper)
         except VfStatusError as exc:
             click.echo(str(exc), err=True)
             raise click.Abort()
@@ -244,9 +252,6 @@ class VersionFlowRepo(object):
             self.gitflow_end(versions)
         except git.GitCommandError as exc:
             self._git_failure("Failed to do the release", exc)
-
-    def close(self):
-        self.gf_wrapper.repo.close()
 
     @staticmethod
     def _git_failure(message, exc):
@@ -274,9 +279,8 @@ class VersionFlowRepo(object):
 
 
 def _do_version(config, level):
-    with closing(VersionFlowProcessor.from_config(config,
-                                                  level,
-                                                  GITFLOW_RELEASE)) as proc:
+    with VersionFlowProcessor.from_config(config, level,
+                                          GITFLOW_RELEASE) as proc:
         proc.process()
 
 
@@ -310,20 +314,18 @@ class VersionFlowProcessor(object):
         [GITFLOW_RELEASE, GITFLOW_HOTFIX]))
 
     @classmethod
+    @contextmanager
     def from_config(cls, config, part, flow_type):
-        vf_repo = VersionFlowRepo.create_checked(config, False)
-        return cls(
-            vf_repo=vf_repo,
-            part=part,
-            flow_type=flow_type)
+        with VersionFlowRepo.create_checked(config, False) as vf_repo:
+            yield cls(
+                vf_repo=vf_repo,
+                part=part,
+                flow_type=flow_type)
 
     def process(self):
         versions = Versions.from_bumpversion(
             self.vf_repo.bv_wrapper, self.part)
         self.vf_repo.process_action(versions, self.part)
-
-    def close(self):
-        self.vf_repo.close()
 
 
 @attr.s
