@@ -1,8 +1,11 @@
+import errno
 import functools
 import os
+import shutil
+import stat
+import tempfile
 
 import attr
-from backports import tempfile
 
 
 @attr.s
@@ -165,11 +168,23 @@ class ActionDecorator(object):
 @ActionDecorator
 def mktempdir(ctx):
     ctx.orig_dir = os.getcwd()
-    ctx.tmp_dir = tempfile.TemporaryDirectory()
-    os.chdir(ctx.tmp_dir.name)
+    ctx.tmp_dir = tempfile.mkdtemp()
+    os.chdir(ctx.tmp_dir)
+
+
+def handleRemoveReadonly(func, path, exc):
+    excvalue = exc[1]
+    if func in (os.rmdir, os.remove) and excvalue.errno == errno.EACCES:
+        os.chmod(path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)  # 0777
+        func(path)
+    else:
+        raise
 
 
 @mktempdir.after
 def remove_tmp_dir(ctx):
     os.chdir(ctx.orig_dir)
-    ctx.tmp_dir.cleanup()
+    shutil.rmtree(
+        ctx.tmp_dir,
+        ignore_errors=False,
+        onerror=handleRemoveReadonly)

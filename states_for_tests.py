@@ -21,7 +21,10 @@ def _make_git(ctx):
 
 @_make_git.after
 def _close_git(ctx):
+    ctx.repo.git.clear_cache()
     ctx.repo.close()
+    del ctx.repo.git
+    del ctx.repo
 
 
 @ActionDecorator
@@ -41,7 +44,12 @@ def _init_gitflow(ctx):
 
 @_init_gitflow.after
 def _close_gitflow(ctx):
+    ctx.gf_wrapper.repo.git.clear_cache()
+    ctx.gf_wrapper.git.clear_cache()
     ctx.gf_wrapper.repo.close()
+    del ctx.gf_wrapper.repo.git
+    del ctx.gf_wrapper.repo
+    del ctx.gf_wrapper
 
 
 @ActionDecorator
@@ -84,6 +92,34 @@ def _set_good_tag(ctx):
     # Add matching version tag
     ctx.repo.create_tag(GOOD_VERSION, ref=ctx.repo.active_branch)
 
+
+@ActionDecorator
+def _set_master_branch(ctx):
+    ctx.repo.heads.master.checkout()
+
+
+@ActionDecorator
+def _make_release_branch(ctx):
+    ctx.release_name = "release/test"
+    ctx.repo.create_head(ctx.release_name)
+
+
+@ActionDecorator
+def _set_release_branch(ctx):
+    ctx.repo.heads[ctx.release_name].checkout()
+
+
+@ActionDecorator
+def _make_feature_branch(ctx):
+    ctx.feature_name = "feature/test"
+    ctx.repo.create_head(ctx.feature_name)
+
+
+@ActionDecorator
+def _set_feature_branch(ctx):
+    ctx.repo.heads[ctx.feature_name].checkout()
+
+
 # ActionDecorators can be combined
 #
 #       c = action1 | action2
@@ -122,3 +158,9 @@ empty_bad_tag_and_bump = empty_gitflow | _add_bumpversion | _set_bad_tag
 bad_tag_and_bump = clean_gitflow | _add_bumpversion | _set_bad_tag
 
 good_base_repo = gitflow_with_bump | _set_good_tag
+
+on_master = good_base_repo | _set_master_branch
+existing_release = good_base_repo | _make_release_branch
+on_release_branch = existing_release | _set_release_branch
+with_feature = good_base_repo | _make_feature_branch
+on_feature = with_feature | _set_feature_branch

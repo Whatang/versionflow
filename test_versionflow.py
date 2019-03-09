@@ -1,13 +1,26 @@
+import versionflow
+import states_for_tests as state
 import contextlib
 import cProfile
 import os
 import unittest
+import traceback
+import functools
 
 import click
 import click.testing
+import git.cmd
+import git
 
-import states_for_tests as state
-import versionflow
+
+def with_breakpoint(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
+
+git.cmd.Git.clear_cache = with_breakpoint(git.cmd.Git.clear_cache)
 
 
 @contextlib.contextmanager
@@ -43,7 +56,13 @@ class BaseTest(unittest.TestCase):
         """
         # Run the init check
         result = self.process()
-        self.assertIsInstance(result.exception, SystemExit)
+        try:
+            self.assertIsInstance(result.exception, SystemExit)
+        except AssertionError:
+            print result.stdout
+            if hasattr(result, "exc_info"):
+                traceback.print_exception(*result.exc_info)
+            raise
         self.assertEqual(result.exit_code, 1)
         if not isinstance(expected_error, versionflow.VfStatusError):
             expected_error = expected_error()
@@ -77,6 +96,8 @@ class BaseTest(unittest.TestCase):
                     # TODO: The output is what we expect.
         except BaseException:
             print(result.stdout)
+            if hasattr(result, "exc_info"):
+                traceback.print_exception(*result.exc_info)
             raise
 
 
@@ -249,6 +270,14 @@ class Test_Check(SimpleCommand):
     @state.good_base_repo
     def test_GoodRepo(self):
         self.check_good_repo()
+
+
+class TestPatch(SimpleCommand):
+    command_args = ["patch"]
+
+    @state.on_master
+    def test_on_master(self):
+        self.check_good_repo('1.0.3')
 
 
 if __name__ == "__main__":
