@@ -287,6 +287,7 @@ class VersionFlowRepo(object):
             self.gitflow_start(versions)
             self.bv_wrapper.bump_and_commit(part)
             self.gitflow_end(versions)
+            click.echo("New version is %s" % versions.new_version)
         except git.GitCommandError as exc:
             self._git_failure("Failed to do the release", exc)
 
