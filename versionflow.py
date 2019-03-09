@@ -71,6 +71,33 @@ class BadVersionTags(VfStatusError):
     """Versions in bumpversion and git tags do not match."""
 
 
+@contextmanager
+def gitflow_context(*args, **kwargs):
+    gf = gitflow.core.GitFlow(*args, **kwargs)
+    try:
+        yield gf
+    finally:
+        gf.repo.close()
+
+
+@contextmanager
+def git_context(*args, **kwargs):
+    repo = git.Repo(*args, **kwargs)
+    try:
+        yield repo
+    finally:
+        repo.close()
+
+
+@contextmanager
+def init_git_context(*args, **kwargs):
+    repo = git.Repo.init(*args, **kwargs)
+    try:
+        yield repo
+    finally:
+        repo.close()
+
+
 @attr.s
 class Config(object):
     repo_dir = attr.ib(default=lambda: os.path.abspath(os.getcwd()))

@@ -1,5 +1,6 @@
 import contextlib
 import cProfile
+import os
 import unittest
 
 import click
@@ -52,23 +53,30 @@ class BaseTest(unittest.TestCase):
                 "\n" +
                 "Aborted!\n"))
 
-    def check_good_repo(self):
+    def check_good_repo(self, expected_version=state.GOOD_VERSION):
         result = self.process()
         try:
             self.assertEqual(result.exit_code, 0)
-            # TODO: more checks that the repo is in a good state.
-            # In particular:
-            # - It is a git repo.
-            # - It is not dirty.
-            # - It is a gitflow repo.
-            # - Bumpversion version number present and matches git tag
-            # - The version number is what we expect it to be.
-            # - The output is what we expect.
-            #
-            # Comment: this is what the "check" command does (except the last).
-            #   version number test. How do we test this?
-        except AssertionError:
-            print result.stdout
+            # It is a git repo.
+            self.assert_(os.path.exists(".git"))
+            with versionflow.git_context() as repo:
+                # It is not dirty.
+                self.assertFalse(repo.is_dirty())
+                with versionflow.gitflow_context() as gf:
+                    # It is a gitflow repo.
+                    self.assert_(gf.is_initialized())
+                    # Bumpversion version number present, in git
+                    # repo, and matches git tag
+                    self.assert_(os.path.exists(state.BV_CONFIG))
+                    self.assert_(
+                        repo.active_branch.commit.tree / state.BV_CONFIG)
+                    bv = versionflow.BumpVersionWrapper.from_existing(
+                        state.BV_CONFIG)
+                    # - The version number is what we expect it to be.
+                    self.assertEqual(bv.current_version, expected_version)
+                    # TODO: The output is what we expect.
+        except BaseException:
+            print(result.stdout)
             raise
 
 
@@ -87,11 +95,11 @@ class Test_Init(SimpleCommand):
 
     @state.do_nothing
     def test_InitNoGit(self):
-        self.check_good_repo()
+        self.check_good_repo(versionflow.START_VERSION)
 
     @state.make_git
     def test_InitJustGit(self):
-        self.check_good_repo()
+        self.check_good_repo(versionflow.START_VERSION)
 
     @state.dirty_empty_git
     def test_InitDirtyEmptyGit(self):
@@ -103,11 +111,11 @@ class Test_Init(SimpleCommand):
 
     @state.clean_git
     def test_InitCleanGit(self):
-        self.check_good_repo()
+        self.check_good_repo(versionflow.START_VERSION)
 
     @state.empty_gitflow
     def test_InitEmptyGitflow(self):
-        self.check_good_repo()
+        self.check_good_repo(versionflow.START_VERSION)
 
     @state.dirty_empty_gitflow
     def test_InitDirtyEmptyGitflow(self):
@@ -119,7 +127,7 @@ class Test_Init(SimpleCommand):
 
     @state.clean_gitflow
     def test_InitCleanGitflow(self):
-        self.check_good_repo()
+        self.check_good_repo(versionflow.START_VERSION)
 
     @state.just_bump
     def test_InitJustBump(self):

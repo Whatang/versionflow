@@ -2,6 +2,12 @@ from action_decorator import ActionDecorator, mktempdir
 import gitflow.core
 import git
 
+INITIAL_FILE = "initial_file"
+DIRTY_FILE = "dirty"
+GOOD_VERSION = "1.0.2"
+BAD_VERSION = "0.0.2"
+BV_CONFIG = "setup.cfg"
+
 
 @ActionDecorator
 def _do_nothing(ctx):
@@ -21,9 +27,9 @@ def _close_git(ctx):
 @ActionDecorator
 def _do_initial_commit(ctx):
     assert not ctx.repo.is_dirty()
-    with open("initial_file", "w") as handle:
+    with open(INITIAL_FILE, "w") as handle:
         print >> handle, "initial"
-    ctx.repo.index.add(["initial_file"])
+    ctx.repo.index.add([INITIAL_FILE])
     ctx.repo.index.commit("Initial commit")
 
 
@@ -41,20 +47,16 @@ def _close_gitflow(ctx):
 @ActionDecorator
 def _make_dirty(ctx):
     # Make a dirty repo
-    with open("dirty", "w") as handle:
-        print >> handle, "dirty"
-    ctx.repo.index.add(["dirty"])
-
-
-GOOD_VERSION = "1.0.2"
-BAD_VERSION = "0.0.2"
+    with open(DIRTY_FILE, "w") as handle:
+        print >> handle, DIRTY_FILE
+    ctx.repo.index.add([DIRTY_FILE])
 
 
 @ActionDecorator
 def _write_bumpversion(ctx):
     # Add bumpversion config
     if not hasattr(ctx, "setup_cfg"):
-        ctx.setup_cfg = "setup.cfg"
+        ctx.setup_cfg = BV_CONFIG
     with open(ctx.setup_cfg, "w") as handle:
         print >> handle, "[bumpversion]"
         print >> handle, "current_version=" + GOOD_VERSION
