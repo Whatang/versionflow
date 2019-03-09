@@ -15,7 +15,7 @@ def _make_git(ctx):
 
 @_make_git.after
 def _close_git(ctx):
-    del ctx.repo
+    ctx.repo.close()
 
 
 @ActionDecorator
@@ -35,7 +35,7 @@ def _init_gitflow(ctx):
 
 @_init_gitflow.after
 def _close_gitflow(ctx):
-    del ctx.gf_wrapper
+    ctx.gf_wrapper.repo.close()
 
 
 @ActionDecorator
@@ -113,7 +113,8 @@ gitflow_with_dirty_bump = gitflow_with_untracked_bump | _stage_bumpversion
 gitflow_with_bump = gitflow_with_dirty_bump | _commit_bumpversion
 
 
-_add_bumpversion = _write_bumpversion | _stage_bumpversion | _commit_bumpversion
+_add_bumpversion = (_write_bumpversion |
+                    _stage_bumpversion | _commit_bumpversion)
 
 empty_bad_tag_and_bump = empty_gitflow | _add_bumpversion | _set_bad_tag
 bad_tag_and_bump = clean_gitflow | _add_bumpversion | _set_bad_tag
