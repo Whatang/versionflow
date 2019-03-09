@@ -1,38 +1,97 @@
+import contextlib
+import cProfile
 import unittest
 
 import click
 import click.testing
 
+import states_for_tests as state
 import versionflow
 
-import states_for_tests as state
+
+@contextlib.contextmanager
+def profile():
+    cp = cProfile.Profile()
+    cp.enable()
+    try:
+        yield
+    finally:
+        cp.disable()
+        cp.print_stats("tottime")
 
 
-class Test_Init(unittest.TestCase):
+class BaseTest(unittest.TestCase):
     def setUp(self):
         self.runner = click.testing.CliRunner()
+        self.test_args = []
 
     def process(self):
+        raise NotImplementedError()
+
+    def check_error(self, expected_error):
+        """
+        Check that the correct behaviour is followed for a bad repo state.
+
+        expected_error is a subclass of VfStatusError, or an instance of some
+        such subclass.
+
+        This test runs the self.process() method of the test, then checks
+        that versionflow exited with an error status, that it returned exit
+        code 1, and that the text of the
+
+        """
+        # Run the init check
+        result = self.process()
+        self.assertIsInstance(result.exception, SystemExit)
+        self.assertEqual(result.exit_code, 1)
+        if not isinstance(expected_error, versionflow.VfStatusError):
+            expected_error = expected_error()
+        self.assert_(
+            result.stdout.endswith(
+                str(expected_error) +
+                "\n" +
+                "Aborted!\n"))
+
+    def check_good_repo(self):
+        result = self.process()
+        try:
+            self.assertEqual(result.exit_code, 0)
+            # TODO: more checks that the repo is in a good state.
+            # In particular:
+            # - It is a git repo.
+            # - It is not dirty.
+            # - It is a gitflow repo.
+            # - Bumpversion version number present and matches git tag
+            # - The version number is what we expect it to be.
+            # - The output is what we expect.
+            #
+            # Comment: this is what the "check" command does (except the last).
+            #   version number test. How do we test this?
+        except AssertionError:
+            print result.stdout
+            raise
+
+
+class SimpleCommand(BaseTest):
+    command_args = []
+
+    def process(self, *args):
         return self.runner.invoke(
             versionflow.cli,
-            ["check"],
-            catch_exceptions=False)
+            self.command_args +
+            self.test_args)
 
-    def check_error(self, error_class):
-        self.assertRaises(error_class, self.process)
 
-# TODO: work out how to test for success in these cases
+class Test_Init(SimpleCommand):
+    command_args = ["init"]
 
-#     @state.do_nothing
-#     def test_InitNoGit(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
+    @state.do_nothing
+    def test_InitNoGit(self):
+        self.check_good_repo()
 
-#     @state.make_git
-#     def test_InitJustGit(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version,
-#                          "0.0.0")
+    @state.make_git
+    def test_InitJustGit(self):
+        self.check_good_repo()
 
     @state.dirty_empty_git
     def test_InitDirtyEmptyGit(self):
@@ -42,16 +101,13 @@ class Test_Init(unittest.TestCase):
     def test_InitDirtyGit(self):
         self.check_error(versionflow.DirtyRepo)
 
-#     @state.clean_git
-#     def test_InitCleanGit(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
+    @state.clean_git
+    def test_InitCleanGit(self):
+        self.check_good_repo()
 
-#     @state.empty_gitflow
-#     def test_InitEmptyGitflow(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version,
-#                          "0.0.0")
+    @state.empty_gitflow
+    def test_InitEmptyGitflow(self):
+        self.check_good_repo()
 
     @state.dirty_empty_gitflow
     def test_InitDirtyEmptyGitflow(self):
@@ -61,49 +117,37 @@ class Test_Init(unittest.TestCase):
     def test_InitDirtyGitflow(self):
         self.check_error(versionflow.DirtyRepo)
 
-#     @state.clean_gitflow
-#     def test_InitCleanGitflow(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version, "0.0.0")
+    @state.clean_gitflow
+    def test_InitCleanGitflow(self):
+        self.check_good_repo()
 
-#     @state.just_bump
-#     def test_InitJustBump(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version,
-#                          TestDataMaker.GOOD_VERSION)
+    @state.just_bump
+    def test_InitJustBump(self):
+        self.check_good_repo()
 
-#     @state.git_with_untracked_bump
-#     def test_InitEmptyGitAndBump(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(
-#             vf_repo.bv_wrapper.current_version,
-#             TestDataMaker.GOOD_VERSION)
+    @state.git_with_untracked_bump
+    def test_InitEmptyGitAndBump(self):
+        self.check_good_repo()
 
     @state.git_with_dirty_bump
     def test_InitGitAndDirtyBump(self):
         self.check_error(versionflow.DirtyRepo)
 
-#     @state.git_with_bump
-#     def test_InitGitAndBump(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version,
-#                          TestDataMaker.GOOD_VERSION)
+    @state.git_with_bump
+    def test_InitGitAndBump(self):
+        self.check_good_repo()
 
-#     @state.gitflow_with_untracked_bump
-#     def test_InitEmptyGitFlowAndBump(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version,
-#                          TestDataMaker.GOOD_VERSION)
+    @state.gitflow_with_untracked_bump
+    def test_InitEmptyGitFlowAndBump(self):
+        self.check_good_repo()
 
     @state.gitflow_with_dirty_bump
     def test_InitGitFlowAndDirtyBump(self):
         self.check_error(versionflow.DirtyRepo)
 
-#     @state.gitflow_with_bump
-#     def test_InitGitFlowAndBump(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(vf_repo.bv_wrapper.current_version,
-#                          TestDataMaker.GOOD_VERSION)
+    @state.gitflow_with_bump
+    def test_InitGitFlowAndBump(self):
+        self.check_good_repo()
 
     @state.empty_bad_tag_and_bump
     def test_InitEmptyBadTagAndBump(self):
@@ -113,27 +157,13 @@ class Test_Init(unittest.TestCase):
     def test_InitBadTagAndBump(self):
         self.check_error(versionflow.BadVersionTags)
 
-#     @state.good_base_repo
-#     def test_InitRepoAlreadyGood(self):
-#         vf_repo = self.handler.process()
-#         self.assertEqual(
-#             vf_repo.bv_wrapper.current_version,
-#             TestDataMaker.GOOD_VERSION)
+    @state.good_base_repo
+    def test_InitRepoAlreadyGood(self):
+        self.check_good_repo()
 
 
-class Test_Check(unittest.TestCase):
-
-    def setUp(self):
-        self.runner = click.testing.CliRunner()
-
-    def process(self):
-        return self.runner.invoke(
-            versionflow.cli,
-            ["check"],
-            catch_exceptions=False)
-
-    def check_error(self, error_class):
-        self.assertRaises(error_class, self.process)
+class Test_Check(SimpleCommand):
+    command_args = ["check"]
 
     @state.do_nothing
     def test_NoGit(self):
@@ -210,8 +240,7 @@ class Test_Check(unittest.TestCase):
 
     @state.good_base_repo
     def test_GoodRepo(self):
-        result = self.process()
-        self.assertEqual(result.exit_code, 0)
+        self.check_good_repo()
 
 
 if __name__ == "__main__":
