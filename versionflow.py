@@ -5,8 +5,8 @@ from contextlib import contextmanager
 
 import attr
 import click
-import pkg_resources
 import setuptools_scm
+import pkg_resources
 import git
 import gitflow.core
 import gitflow.branches
@@ -77,7 +77,11 @@ def gitflow_context(*args, **kwargs):
     try:
         yield gf
     finally:
+        gf.repo.git.clear_cache()
+        gf.git.clear_cache()
         gf.repo.close()
+        del gf.repo
+        del gf
 
 
 @contextmanager
@@ -86,7 +90,9 @@ def git_context(*args, **kwargs):
     try:
         yield repo
     finally:
+        repo.git.clear_cache()
         repo.close()
+        del repo
 
 
 @contextmanager
@@ -166,19 +172,24 @@ class Config(object):
             bv.current_version)
         return bv
 
+    @staticmethod
+    def _get_last_version(gf_wrapper):
+        # Try to get version number from repository
+        def last_version(version):
+            if str(version.tag) == '0.0':
+                raise LookupError()
+            return version.format_with("{tag}")
+        version = setuptools_scm.get_version(
+            version_scheme=last_version,
+            local_scheme=lambda v: "")
+        return version
+
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
         # Check that there is a version tag, and that it is
         # correct as per the bumpversion section
         click.echo("Checking version in repository tags...")
         try:
-            # Try to get version number from repository
-            def last_version(version):
-                if str(version.tag) == '0.0':
-                    raise LookupError()
-                return version.format_with("{tag}")
-            version = setuptools_scm.get_version(
-                version_scheme=last_version,
-                local_scheme=lambda v: "")
+            version = self._get_last_version(gf_wrapper)
             click.echo("- Last tagged version is " + version)
             # Check if the version tags match what we expect
             if version != bv_wrapper.current_version:
@@ -291,7 +302,8 @@ class VersionFlowRepo(object):
     def gitflow_start(self, versions):
         self.gf_wrapper.create(
             gitflow.branches.ReleaseBranchManager.identifier,
-            versions.new_version)
+            versions.new_version,
+            None, False)
 
     def gitflow_end(self, versions):
         self.gf_wrapper.finish(
@@ -418,6 +430,7 @@ class BumpVersionWrapper(object):
         if new_version is None:
             click.echo("Failed to get next version number", err=True)
             raise click.Abort()
+        return new_version
 
     def _run_bumpversion(self, bv_args, **subprocess_kw_args):
         return subprocess.check_output(
