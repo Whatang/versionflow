@@ -107,59 +107,58 @@ class Config(object):
     def get_git_context(self, create):
         click.echo("Checking if this is a clean git repo...")
         try:
-            repo = git.Repo(self.repo_dir)
-            click.echo("- Confirmed that this is a git repo")
-            if repo.is_dirty():
-                raise DirtyRepo()
-            else:
-                click.echo("- git repo is clean")
+            with git_context(self.repo_dir) as repo:
+                click.echo("- Confirmed that this is a git repo")
+                if repo.is_dirty():
+                    raise DirtyRepo()
+                else:
+                    click.echo("- git repo is clean")
+                yield repo
         except git.InvalidGitRepositoryError:
             if create:
-                repo = git.Repo.init(self.repo_dir)
-                click.echo("- Initialised this directory as a git repo")
+                with init_git_context(self.repo_dir) as repo:
+                    click.echo("- Initialised this directory as a git repo")
+                    yield repo
             else:
                 raise NoRepo()
-        try:
-            yield repo
-        finally:
-            repo.close()
 
     @contextmanager
     def get_gitflow_context(self, create):
         click.echo("Checking if this is a git flow repo...")
-        gf = gitflow.core.GitFlow()
-        if gf.is_initialized():
-            click.echo("- Confirmed that this is a git flow repo")
-        elif create:
-            click.echo("- Initialising a git flow repo...")
-            gf.init()
-            click.echo("- Initialised this directory as a git flow repo")
-        else:
-            raise NoGitFlow()
-        try:
+        with gitflow_context() as gf:
+            if gf.is_initialized():
+                click.echo("- Confirmed that this is a git flow repo")
+            elif create:
+                click.echo("- Initialising a git flow repo...")
+                gf.init()
+                click.echo("- Initialised this directory as a git flow repo")
+            else:
+                raise NoGitFlow()
             yield gf
-        finally:
-            gf.repo.close()
 
     def check_bumpversion(self, create, repo):
         click.echo("Checking if bumpversion is initialised...")
         try:
             # Check that the bumpversion config file is in the git repo
-            bv = BumpVersionWrapper.from_existing(self)
+            bv = BumpVersionWrapper.from_existing(self.bumpversion_config)
             relpath = os.path.relpath(self.bumpversion_config)
             repo.active_branch.commit.tree / relpath
         except BumpVersionWrapper.NoBumpversionConfig:
             if create:
-                bv = BumpVersionWrapper.initialize(self)
+                bv = BumpVersionWrapper.initialize(self.bumpversion_config)
                 click.echo(
-                    "- bumpversion configured with current version set to " +
+                    "- bumpversion initialised with current version set to " +
                     bv.current_version)
+                repo.index.add([self.bumpversion_config])
+                repo.index.commit("Add bumpversion config")
+                return bv
             else:
                 raise NoBumpVersion()
         except KeyError:
             if create:
                 click.echo("- bumpversion config added to git repo")
                 repo.index.add([self.bumpversion_config])
+                repo.index.commit("Add bumpversion config")
             else:
                 raise BumpNotInGit()
         click.echo(
@@ -365,11 +364,11 @@ class BumpVersionWrapper(object):
         pass
 
     @classmethod
-    def from_existing(cls, vf_config):
-        if (not os.path.exists(vf_config.bumpversion_config)):
+    def from_existing(cls, bumpversion_config):
+        if (not os.path.exists(bumpversion_config)):
             raise cls.NoBumpversionConfig()
         parsed_config = ConfigParser.ConfigParser()
-        parsed_config.read(vf_config.bumpversion_config)
+        parsed_config.read(bumpversion_config)
         if not parsed_config.has_section(BV_SECTION):
             raise cls.NoBumpversionConfig()
         try:
@@ -378,22 +377,22 @@ class BumpVersionWrapper(object):
         except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
             raise cls.NoBumpversionConfig()
         return cls(
-            vf_config.bumpversion_config,
+            bumpversion_config,
             parsed_config,
             current_version)
 
     @classmethod
-    def initialize(cls, vf_config):
+    def initialize(cls, bumpversion_config):
         config_parser = ConfigParser.ConfigParser()
-        if os.path.exists(vf_config.bumpversion_config):
-            config_parser.read(vf_config.bumpversion_config)
+        if os.path.exists(bumpversion_config):
+            config_parser.read(bumpversion_config)
         if not config_parser.has_section(BV_SECTION):
             config_parser.add_section(BV_SECTION)
         if not config_parser.has_option(BV_SECTION, BV_CURRENT_VER_OPTION):
             config_parser.set(BV_SECTION, BV_CURRENT_VER_OPTION, START_VERSION)
-        config_parser.write(open(vf_config.bumpversion_config, "w"))
+        config_parser.write(open(bumpversion_config, "w"))
         return cls(
-            vf_config.bumpversion_config,
+            bumpversion_config,
             config_parser,
             START_VERSION)
 
