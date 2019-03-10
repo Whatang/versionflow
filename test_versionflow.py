@@ -50,7 +50,7 @@ class ErrorResult(Result):
             testclass.assertIsInstance(result.exception, SystemExit)
             testclass.assertEqual(result.exit_code, 1)
             expected_error = self.error
-            if not isinstance(expected_error, versionflow.VfStatusError):
+            if issubclass(expected_error, versionflow.VersionFlowError):
                 expected_error = expected_error()
             testclass.assert_(
                 result.stdout.endswith(
@@ -148,8 +148,22 @@ class StateTest(object):
         return testcase
 
 
-good = StateTest.good
 bad = StateTest.bad
+
+
+def start(s): return StateTest.good(s, versionflow.START_VERSION)
+
+
+def good(s): return StateTest.good(s, state.GOOD_VERSION)
+
+
+def patch(s): return StateTest.good(s, state.NEXT_PATCH)
+
+
+def minor(s): return StateTest.good(s, state.NEXT_MINOR)
+
+
+def major(s): return StateTest.good(s, state.NEXT_MAJOR)
 
 
 class BaseTest(unittest.TestCase):
@@ -164,70 +178,97 @@ class BaseTest(unittest.TestCase):
             self.command_args)
 
 
+_always_bad_states = [bad(state.dirty_empty_git, versionflow.DirtyRepo),
+                      bad(state.dirty_git, versionflow.DirtyRepo),
+                      bad(state.dirty_empty_gitflow, versionflow.DirtyRepo),
+                      bad(state.dirty_gitflow, versionflow.DirtyRepo),
+                      bad(state.git_with_dirty_bump, versionflow.DirtyRepo),
+                      bad(state.gitflow_with_dirty_bump, versionflow.DirtyRepo),
+                      bad(state.empty_bad_tag_and_bump, versionflow.BadVersionTags),
+                      bad(state.bad_tag_and_bump, versionflow.BadVersionTags),
+
+                      ]
+
+
 @StateTest.make_tests
 class Test_Init(BaseTest):
     command_args = ["init"]
-    state_tests = [good(state.do_nothing, versionflow.START_VERSION),
-                   good(state.make_git, versionflow.START_VERSION),
-                   bad(state.dirty_empty_git, versionflow.DirtyRepo),
-                   bad(state.dirty_git, versionflow.DirtyRepo),
-                   good(state.clean_git, versionflow.START_VERSION),
-                   good(state.empty_gitflow, versionflow.START_VERSION),
-                   bad(state.dirty_empty_gitflow, versionflow.DirtyRepo),
-                   bad(state.dirty_gitflow, versionflow.DirtyRepo),
-                   good(state.clean_gitflow, versionflow.START_VERSION),
-                   good(state.just_bump, state.GOOD_VERSION),
-                   good(state.git_with_untracked_bump, state.GOOD_VERSION),
-                   bad(state.git_with_dirty_bump, versionflow.DirtyRepo),
-                   good(state.git_with_bump, state.GOOD_VERSION),
-                   good(state.gitflow_with_untracked_bump, state.GOOD_VERSION),
-                   bad(state.gitflow_with_dirty_bump, versionflow.DirtyRepo),
-                   good(state.gitflow_with_bump, state.GOOD_VERSION),
-                   bad(state.empty_bad_tag_and_bump,
-                       versionflow.BadVersionTags),
-                   bad(state.bad_tag_and_bump, versionflow.BadVersionTags),
-                   good(state.good_dev_branch, state.GOOD_VERSION),
-                   good(state.on_bad_master, state.GOOD_VERSION),
-                   good(state.good_base_repo, state.GOOD_VERSION),
-                   good(state.on_master, state.GOOD_VERSION)
-                   ]
+    state_tests = (_always_bad_states + [
+        start(state.do_nothing),
+        start(state.make_git),
+        start(state.clean_git),
+        start(state.empty_gitflow),
+        start(state.clean_gitflow),
+        good(state.just_bump),
+        good(state.git_with_untracked_bump),
+        good(state.git_with_bump),
+        good(state.gitflow_with_untracked_bump),
+        good(state.gitflow_with_bump),
+        good(state.good_dev_branch),
+        good(state.on_bad_master),
+        good(state.good_base_repo),
+        good(state.on_master),
+        good(state.existing_release),
+        good(state.on_release_branch),
+        good(state.with_feature),
+        good(state.on_feature)
+    ])
 
 
 @StateTest.make_tests
 class Test_Check(BaseTest):
     command_args = ["check"]
-    state_tests = [
+    state_tests = (_always_bad_states + [
         bad(state.do_nothing, versionflow.NoRepo),
         bad(state.make_git, versionflow.NoGitFlow),
-        bad(state.dirty_empty_git, versionflow.DirtyRepo),
-        bad(state.dirty_git, versionflow.DirtyRepo),
         bad(state.clean_git, versionflow.NoGitFlow),
         bad(state.empty_gitflow, versionflow.NoBumpVersion),
-        bad(state.dirty_empty_gitflow, versionflow.DirtyRepo),
-        bad(state.dirty_gitflow, versionflow.DirtyRepo),
         bad(state.clean_gitflow, versionflow.NoBumpVersion),
         bad(state.just_bump, versionflow.NoRepo),
         bad(state.git_with_untracked_bump, versionflow.NoGitFlow),
-        bad(state.git_with_dirty_bump, versionflow.DirtyRepo),
         bad(state.git_with_bump, versionflow.NoGitFlow),
         bad(state.gitflow_with_untracked_bump, versionflow.BumpNotInGit),
-        bad(state.gitflow_with_dirty_bump, versionflow.DirtyRepo),
         bad(state.gitflow_with_bump, versionflow.NoVersionTags),
-        bad(state.empty_bad_tag_and_bump, versionflow.BadVersionTags),
-        bad(state.bad_tag_and_bump, versionflow.BadVersionTags),
         bad(state.on_bad_master, versionflow.NoBumpVersion),
-        good(state.good_dev_branch, state.GOOD_VERSION),
-        good(state.good_base_repo, state.GOOD_VERSION),
-        good(state.on_master, state.GOOD_VERSION)
-    ]
+        good(state.good_dev_branch),
+        good(state.good_base_repo),
+        good(state.on_master),
+        good(state.existing_release),
+        good(state.on_release_branch),
+        good(state.with_feature),
+        good(state.on_feature)
+    ])
+
+
+def make_bump_tests(bump):
+    return (_always_bad_states +
+            [
+                bad(state.on_bad_master, versionflow.NoBumpVersion),
+                bad(state.existing_release, versionflow.AlreadyReleasing),
+                bad(state.on_release_branch, versionflow.AlreadyReleasing),
+                bump(state.good_base_repo),
+                bump(state.on_master),
+                bump(state.with_feature),
+                bump(state.on_feature)
+            ])
 
 
 @StateTest.make_tests
 class Test_Patch(BaseTest):
     command_args = ["patch"]
-    state_tests = [
-        bad(state.on_bad_master, versionflow.NoBumpVersion),
-        good(state.on_master, state.NEXT_PATCH)]
+    state_tests = make_bump_tests(patch)
+
+
+@StateTest.make_tests
+class Test_Minor(BaseTest):
+    command_args = ["minor"]
+    state_tests = make_bump_tests(minor)
+
+
+@StateTest.make_tests
+class Test_Major(BaseTest):
+    command_args = ["major"]
+    state_tests = make_bump_tests(minor)
 
 
 if __name__ == "__main__":

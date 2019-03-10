@@ -35,7 +35,7 @@ START_VERSION = "0.0.0"
 DEFAULT_BV_FILE = "setup.cfg"
 
 
-class VfStatusError(Exception):
+class VersionFlowError(Exception):
     def __str__(self):
         """
         Use the docstring for the error class as the error message.
@@ -43,32 +43,52 @@ class VfStatusError(Exception):
         return self.__doc__
 
 
-class NoRepo(VfStatusError):
+class NoRepo(VersionFlowError):
     """Not a git repo."""
 
 
-class DirtyRepo(VfStatusError):
+class DirtyRepo(VersionFlowError):
     """git repo is dirty."""
 
 
-class NoGitFlow(VfStatusError):
+class NoGitFlow(VersionFlowError):
     """Not a git flow repo."""
 
 
-class NoBumpVersion(VfStatusError):
+class NoBumpVersion(VersionFlowError):
     """bumpversion not initalised."""
 
 
-class BumpNotInGit(VfStatusError):
+class BumpNotInGit(VersionFlowError):
     """bumpversion config not added to git repo."""
 
 
-class NoVersionTags(VfStatusError):
+class GetBumpVersionError(VersionFlowError):
+    """Could not retrieve the verison from the bumpversion config."""
+
+
+class GetNextBumpVersionError(VersionFlowError):
+    """Could not determine the next version from bumpversion."""
+
+
+class SetNextBumpVersionError(VersionFlowError):
+    """Could not set the next version with bumpversion."""
+
+
+class NoVersionTags(VersionFlowError):
     """Could not get version number from repository tags."""
 
 
-class BadVersionTags(VfStatusError):
+class BadVersionTags(VersionFlowError):
     """Versions in bumpversion and git tags do not match."""
+
+
+class AlreadyReleasing(VersionFlowError):
+    """There is already a release in progress."""
+
+
+class GitError(VersionFlowError):
+    """Error executing git commands."""
 
 
 @contextmanager
@@ -238,8 +258,12 @@ def cli(ctx, repo_dir, bumpversion_config):
 
 
 def _do_status(config, create):
-    with VersionFlowRepo.create_checked(config, create):
-        pass
+    try:
+        with VersionFlowRepo.create_checked(config, create):
+            pass
+    except VersionFlowError as exc:
+        click.echo(str(exc), err=True)
+        raise click.Abort()
 
 
 @cli.command()
@@ -268,19 +292,15 @@ class VersionFlowRepo(object):
         if config is None:
             config = Config()
         # Check this is a clean git repo
-        try:
-            with config.get_git_context(create) as repo:
-                # Check if git flow is initialised
-                with config.get_gitflow_context(create) as gf_wrapper:
-                    # Check that there is a bumpversion section
-                    bv_wrapper = config.check_bumpversion(create, repo)
-                    # Check that there is a version tag, and that it is
-                    # correct as per the bumpversion section
-                    config.check_version_tag(create, bv_wrapper, gf_wrapper)
-                    yield cls(config, gf_wrapper, bv_wrapper)
-        except VfStatusError as exc:
-            click.echo(str(exc), err=True)
-            raise click.Abort()
+        with config.get_git_context(create) as repo:
+            # Check if git flow is initialised
+            with config.get_gitflow_context(create) as gf_wrapper:
+                # Check that there is a bumpversion section
+                bv_wrapper = config.check_bumpversion(create, repo)
+                # Check that there is a version tag, and that it is
+                # correct as per the bumpversion section
+                config.check_version_tag(create, bv_wrapper, gf_wrapper)
+                yield cls(config, gf_wrapper, bv_wrapper)
 
     def process_action(self, versions, part):
         try:
@@ -298,13 +318,16 @@ class VersionFlowRepo(object):
             command=exc.command, status=exc.status), err=True)
         click.echo(exc.stdout, err=True)
         click.echo(exc.stderr, err=True)
-        raise click.Abort()
+        raise GitError()
 
     def gitflow_start(self, versions):
-        self.gf_wrapper.create(
-            gitflow.branches.ReleaseBranchManager.identifier,
-            versions.new_version,
-            None, False)
+        try:
+            self.gf_wrapper.create(
+                gitflow.branches.ReleaseBranchManager.identifier,
+                versions.new_version,
+                None, False)
+        except gitflow.branches.BranchTypeExistsError:
+            raise AlreadyReleasing()
 
     def gitflow_end(self, versions):
         self.gf_wrapper.finish(
@@ -318,9 +341,13 @@ class VersionFlowRepo(object):
 
 
 def _do_version(config, level):
-    with VersionFlowProcessor.from_config(config, level,
-                                          GITFLOW_RELEASE) as proc:
-        proc.process()
+    try:
+        with VersionFlowProcessor.from_config(config, level,
+                                              GITFLOW_RELEASE) as proc:
+            proc.process()
+    except VersionFlowError as exc:
+        click.echo(str(exc), err=True)
+        raise click.Abort()
 
 
 @cli.command()
@@ -418,7 +445,7 @@ class BumpVersionWrapper(object):
             click.echo(
                 "Failed to bump the version number in the release", err=True)
             click.echo(exc.output, err=True)
-            raise click.Abort()
+            raise SetNextBumpVersionError()
 
     def get_new_version(self, part):
         bv_output = self._run_bumpversion(
@@ -430,7 +457,7 @@ class BumpVersionWrapper(object):
         # What if we can't find new version?
         if new_version is None:
             click.echo("Failed to get next version number", err=True)
-            raise click.Abort()
+            raise GetNextBumpVersionError()
         return new_version
 
     def _run_bumpversion(self, bv_args, **subprocess_kw_args):
@@ -456,7 +483,7 @@ class Versions(object):
             # Handle bumpversion failures
             click.echo("Failed to get version numbers", err=True)
             click.echo(exc.output, err=True)
-            raise click.Abort()
+            raise GetBumpVersionError()
 
 
 if __name__ == "__main__":
