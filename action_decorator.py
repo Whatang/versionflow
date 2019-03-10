@@ -117,6 +117,21 @@ class ActionDecorator(object):
     def after(self, func):
         self.post_action = func
 
+    def __rmul__(self, name):
+        """
+        Name an ActionDecorator.
+
+        An instance of an ActionDecorator can be given a name by
+        pre-multiplying it with a string, e.g.
+
+            x = "name_of_x" * x
+
+        will assign "name_of_x" to x.__name__. This is just a way
+        of being able to give names to composed ActionDecorators.
+        """
+        self.__name__ = name
+        return self
+
     def __or__(self, other):
         """
         Compose two ActionDecorators.
