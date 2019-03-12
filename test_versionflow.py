@@ -79,8 +79,9 @@ class Success(Result):
                 with versionflow.gitflow_context() as gf:
                     # It is a gitflow repo.
                     testclass.assert_(gf.is_initialized())
-                    # Bumpversion version number present, in git
-                    # repo, and matches git tag
+                    # Bumpversion version number present in git repo
+                    # on develop branch
+                    repo.heads.develop.checkout()
                     testclass.assert_(os.path.exists(state.BV_CONFIG))
                     testclass.assert_(
                         repo.active_branch.commit.tree / state.BV_CONFIG)
@@ -88,7 +89,12 @@ class Success(Result):
                         state.BV_CONFIG)
                     # - The version number is what we expect it to be.
                     testclass.assertEqual(bv.current_version, self.version)
+                    # Check that the git version tag is present and is what we
+                    # expect
+                    tag_version = versionflow.Config.get_last_version(gf)
+                    testclass.assertEqual(tag_version, self.version)
                     # TODO: The output is what we expect.
+
         except BaseException:
             print(result.stdout)
             if hasattr(result, "exc_info"):
@@ -178,16 +184,16 @@ class BaseTest(unittest.TestCase):
             self.command_args)
 
 
-_always_bad_states = [bad(state.dirty_empty_git, versionflow.DirtyRepo),
-                      bad(state.dirty_git, versionflow.DirtyRepo),
-                      bad(state.dirty_empty_gitflow, versionflow.DirtyRepo),
-                      bad(state.dirty_gitflow, versionflow.DirtyRepo),
-                      bad(state.git_with_dirty_bump, versionflow.DirtyRepo),
-                      bad(state.gitflow_with_dirty_bump, versionflow.DirtyRepo),
-                      bad(state.empty_bad_tag_and_bump, versionflow.BadVersionTags),
-                      bad(state.bad_tag_and_bump, versionflow.BadVersionTags),
-
-                      ]
+_always_bad_states = [
+    bad(state.dirty_empty_git, versionflow.DirtyRepo),
+    bad(state.dirty_git, versionflow.DirtyRepo),
+    bad(state.dirty_empty_gitflow, versionflow.DirtyRepo),
+    bad(state.dirty_gitflow, versionflow.DirtyRepo),
+    bad(state.git_with_dirty_bump, versionflow.DirtyRepo),
+    bad(state.gitflow_with_dirty_bump, versionflow.DirtyRepo),
+    bad(state.empty_bad_tag_and_bump, versionflow.BadVersionTags),
+    bad(state.bad_tag_and_bump, versionflow.BadVersionTags)
+]
 
 
 @StateTest.make_tests

@@ -164,7 +164,7 @@ git_with_dirty_bump = ("git_with_dirty_bump" *
 git_with_bump = "git_with_bump" * (git_with_dirty_bump | _commit_bumpversion)
 
 gitflow_with_untracked_bump = (
-    "gitflow_with_untracked_bump" * (empty_gitflow | _write_bumpversion))
+    "gitflow_with_untracked_bump" * (clean_gitflow | _write_bumpversion))
 gitflow_with_dirty_bump = ("gitflow_with_dirty_bump" *
                            (gitflow_with_untracked_bump | _stage_bumpversion))
 gitflow_with_bump = ("gitflow_with_bump" *

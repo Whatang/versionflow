@@ -193,7 +193,7 @@ class Config(object):
         return bv
 
     @staticmethod
-    def _get_last_version(gf_wrapper):
+    def get_last_version(gf_wrapper):
         # Try to get version number from repository
         def last_version(version):
             if str(version.tag) == '0.0':
@@ -209,7 +209,7 @@ class Config(object):
         # correct as per the bumpversion section
         click.echo("Checking version in repository tags...")
         try:
-            version = self._get_last_version(gf_wrapper)
+            version = self.get_last_version(gf_wrapper)
             click.echo("- Last tagged version is " + version)
             # Check if the version tags match what we expect
             if version != bv_wrapper.current_version:
@@ -220,7 +220,9 @@ class Config(object):
                 click.echo(
                     "- Base version tags set to " +
                     bv_wrapper.current_version)
-                gf_wrapper.tag(bv_wrapper.current_version, "HEAD")
+                gf_wrapper.tag(
+                    bv_wrapper.current_version,
+                    gf_wrapper.repo.heads.master)
             else:
                 raise NoVersionTags()
 
