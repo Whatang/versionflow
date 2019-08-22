@@ -64,7 +64,7 @@ class BumpNotInGit(VersionFlowError):
 
 
 class GetBumpVersionError(VersionFlowError):
-    """Could not retrieve the verison from the bumpversion config."""
+    """Could not retrieve the version from the bumpversion config."""
 
 
 class GetNextBumpVersionError(VersionFlowError):
@@ -163,7 +163,7 @@ class Config(object):
             yield gf
 
     def check_bumpversion(self, create, repo):
-        click.echo("Checking if bumpversion is initialised...")
+        click.echo("Checking if bumpversion is initialised... ")
         try:
             # Check that the bumpversion config file is in the git repo
             bv = BumpVersionWrapper.from_existing(self.bumpversion_config)
@@ -247,16 +247,16 @@ def _make_abs_path(ctx, _, path):
               callback=_set_curdir,
               # TODO: add help
               type=click.Path(exists=True, file_okay=False, dir_okay=True))
-@click.option('--bumpversion-config',
+@click.option('--config',
               callback=_make_abs_path,
               # TODO: add help
               type=click.Path(exists=False, file_okay=True,
                               readable=True, writable=True, dir_okay=False),
               default=DEFAULT_BV_FILE)
 @click.pass_context
-def cli(ctx, repo_dir, bumpversion_config):
+def cli(ctx, repo_dir, config):
     # Record configuration options
-    ctx.obj = Config(repo_dir=repo_dir, bumpversion_config=bumpversion_config)
+    ctx.obj = Config(repo_dir=repo_dir, bumpversion_config=config)
 
 
 def _do_status(config, create):
@@ -464,7 +464,7 @@ class BumpVersionWrapper(object):
 
     def _run_bumpversion(self, bv_args, **subprocess_kw_args):
         return subprocess.check_output(
-            [BV_EXEC] + bv_args + [self.config_file],
+            [BV_EXEC] + ["--config-file", self.config_file] + bv_args,
             stderr=subprocess.STDOUT,
             **subprocess_kw_args)
 
