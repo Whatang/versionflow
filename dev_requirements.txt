@@ -4,3 +4,5 @@
 	bump2version==0.5.10
 	gitpython==2.1.11
 	gitflow==0.5.1
+	pylint>=1.9.4
+	rope>=0.14.0
