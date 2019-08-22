@@ -246,16 +246,16 @@ class Test_Check(BaseTest):
     ])
 
 
-def make_bump_tests(bump):
+def make_bump_tests(bump_command):
     return (_always_bad_states +
             [
                 bad(state.on_bad_master, versionflow.NoBumpVersion),
                 bad(state.existing_release, versionflow.AlreadyReleasing),
                 bad(state.on_release_branch, versionflow.AlreadyReleasing),
-                bump(state.good_base_repo),
-                bump(state.on_master),
-                bump(state.with_feature),
-                bump(state.on_feature)
+                bump_command(state.good_base_repo),
+                bump_command(state.on_master),
+                bump_command(state.with_feature),
+                bump_command(state.on_feature)
             ])
 
 
@@ -274,7 +274,7 @@ class Test_Minor(BaseTest):
 @StateTest.make_tests
 class Test_Major(BaseTest):
     command_args = ["major"]
-    state_tests = make_bump_tests(minor)
+    state_tests = make_bump_tests(major)
 
 
 if __name__ == "__main__":
