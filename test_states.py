@@ -9,7 +9,7 @@ NEXT_PATCH = "1.0.3"
 NEXT_MINOR = "1.1.0"
 NEXT_MAJOR = "2.0.0"
 BAD_VERSION = "0.0.2"
-BV_CONFIG = "setup.cfg"
+BV_CONFIG = ".versionflow"
 
 
 @ActionDecorator

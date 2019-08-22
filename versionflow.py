@@ -32,7 +32,7 @@ BV_EXEC = "bumpversion"
 BV_CURRENT_VER_OPTION = "current_version"
 BV_NEW_VER_OPTION = "new_version"
 START_VERSION = "0.0.0"
-DEFAULT_BV_FILE = "setup.cfg"
+DEFAULT_BV_FILE = ".versionflow"
 
 
 class VersionFlowError(Exception):
