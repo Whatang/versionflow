@@ -1,4 +1,5 @@
 from action_decorator import ActionDecorator, mktempdir
+import versionflow
 import gitflow.core
 import git
 
@@ -9,7 +10,6 @@ NEXT_PATCH = "1.0.3"
 NEXT_MINOR = "1.1.0"
 NEXT_MAJOR = "2.0.0"
 BAD_VERSION = "0.0.2"
-BV_CONFIG = ".versionflow"
 
 
 @ActionDecorator
@@ -64,17 +64,23 @@ def _make_dirty(ctx):
 
 
 @ActionDecorator
-def _set_bumpversion_config(ctx):
+def _set_custom_bumpversion_config(ctx):
     # Use a non-standard BV config
     assert not hasattr(ctx, "setup_cfg")
     ctx.setup_cfg = "unusual_config"
 
 
 @ActionDecorator
+def _set_standard_bumpversion_config(ctx):
+    # Use a non-standard BV config
+    assert not hasattr(ctx, "setup_cfg")
+    ctx.setup_cfg = versionflow.DEFAULT_BV_FILE
+
+
+@ActionDecorator
 def _write_bumpversion(ctx):
     # Add bumpversion config
-    if not hasattr(ctx, "setup_cfg"):
-        ctx.setup_cfg = BV_CONFIG
+    assert hasattr(ctx, "setup_cfg")
     with open(ctx.setup_cfg, "w") as handle:
         print >> handle, "[bumpversion]"
         print >> handle, "current_version=" + GOOD_VERSION
@@ -152,6 +158,8 @@ def _set_feature_branch(ctx):
 
 do_nothing = "nothing" * (mktempdir | _do_nothing)
 make_git = "make_git" * (mktempdir | _make_git)
+nothing_and_custom = "just_custom_set" * \
+    (mktempdir | _set_custom_bumpversion_config)
 
 dirty_empty_git = "dirty_empty_git" * (make_git | _make_dirty)
 clean_git = "clean_git" * (make_git | _do_initial_commit)
@@ -162,16 +170,18 @@ dirty_empty_gitflow = "dirty_empty_gitflow" * (empty_gitflow | _make_dirty)
 clean_gitflow = "clean_gitflow" * (empty_gitflow | _do_initial_commit)
 dirty_gitflow = "dirty_gitflow" * (clean_gitflow | _make_dirty)
 
-just_bump = "just_bump" * (mktempdir | _write_bumpversion)
+just_bump = ("just_bump" *
+             (mktempdir | _set_standard_bumpversion_config | _write_bumpversion))
 
 git_with_untracked_bump = (
-    "git_with_untracked_bump" * (make_git | _write_bumpversion))
+    "git_with_untracked_bump" * (make_git | _set_standard_bumpversion_config | _write_bumpversion))
 git_with_dirty_bump = ("git_with_dirty_bump" *
                        (git_with_untracked_bump | _stage_bumpversion))
-git_with_bump = "git_with_bump" * (git_with_dirty_bump | _commit_bumpversion)
+git_with_bump = ("git_with_bump" *
+                 (git_with_dirty_bump | _commit_bumpversion))
 
 gitflow_with_untracked_bump = (
-    "gitflow_with_untracked_bump" * (clean_gitflow | _write_bumpversion))
+    "gitflow_with_untracked_bump" * (clean_gitflow | _set_standard_bumpversion_config | _write_bumpversion))
 gitflow_with_dirty_bump = ("gitflow_with_dirty_bump" *
                            (gitflow_with_untracked_bump | _stage_bumpversion))
 gitflow_with_bump = ("gitflow_with_bump" *
@@ -181,9 +191,9 @@ _add_bumpversion = (_write_bumpversion |
                     _stage_bumpversion | _commit_bumpversion)
 
 empty_bad_tag_and_bump = ("empty_bad_tag_and_bump" *
-                          (empty_gitflow | _add_bumpversion | _set_bad_tag))
+                          (empty_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag))
 bad_tag_and_bump = ("bad_tag_and_bump" *
-                    (clean_gitflow | _add_bumpversion | _set_bad_tag))
+                    (clean_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag))
 
 
 good_dev_branch = ("good_dev_branch" *
@@ -193,12 +203,12 @@ good_base_repo = ("good_base_repo" *
                   (good_dev_branch | _ff_master))
 
 good_custom_config = ("custom_bump" *
-                      (clean_gitflow | _set_bumpversion_config |
+                      (clean_gitflow | _set_custom_bumpversion_config |
                        _add_bumpversion | _set_good_tag))
 
 
-on_bad_master = "on_bad_master" * \
-    (good_dev_branch | _set_master_branch)
+on_bad_master = ("on_bad_master" *
+                 (good_dev_branch | _set_master_branch))
 on_master = "on_master" * (good_base_repo | _set_master_branch)
 existing_release = "existing_release" * (good_base_repo | _make_release_branch)
 on_release_branch = ("on_release_branch" *

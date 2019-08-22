@@ -79,14 +79,16 @@ class Success(Result):
                 with versionflow.gitflow_context() as gf:
                     # It is a gitflow repo.
                     testclass.assert_(gf.is_initialized())
+                    setup_cfg = getattr(
+                        ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
                     # Bumpversion version number present in git repo
                     # on develop branch
                     repo.heads.develop.checkout()
-                    testclass.assert_(os.path.exists(ctx.setup_cfg))
+                    testclass.assert_(os.path.exists(setup_cfg))
                     testclass.assert_(
-                        repo.active_branch.commit.tree / ctx.setup_cfg)
+                        repo.active_branch.commit.tree / setup_cfg)
                     bv = versionflow.BumpVersionWrapper.from_existing(
-                        ctx.setup_cfg)
+                        setup_cfg)
                     # - The version number is what we expect it to be.
                     testclass.assertEqual(bv.current_version, self.version)
                     # Check that the git version tag is present and is what we
@@ -135,7 +137,7 @@ class StateTest(object):
         name = "test_" + prefix + "_" + name
         @self.state
         def test_method(slf, ctx):
-            if hasattr(ctx, "setup_cfg") and ctx.setup_cfg != test_states.BV_CONFIG:
+            if hasattr(ctx, "setup_cfg") and ctx.setup_cfg != versionflow.DEFAULT_BV_FILE:
                 slf.command_args = ["--config",
                                     ctx.setup_cfg] + slf.command_args
             result = slf.process()
@@ -210,6 +212,7 @@ class Test_Init(BaseTest):
         start(test_states.clean_git),
         start(test_states.empty_gitflow),
         start(test_states.clean_gitflow),
+        start(test_states.nothing_and_custom),
         good(test_states.just_bump),
         good(test_states.git_with_untracked_bump),
         good(test_states.git_with_bump),
@@ -242,6 +245,7 @@ class Test_Check(BaseTest):
         bad(test_states.gitflow_with_untracked_bump, versionflow.BumpNotInGit),
         bad(test_states.gitflow_with_bump, versionflow.NoVersionTags),
         bad(test_states.on_bad_master, versionflow.NoBumpVersion),
+        bad(test_states.nothing_and_custom, versionflow.NoRepo),
         good(test_states.good_dev_branch),
         good(test_states.good_base_repo),
         good(test_states.on_master),
@@ -260,6 +264,7 @@ def make_bump_tests(bump_command):
                 bad(test_states.existing_release, versionflow.AlreadyReleasing),
                 bad(test_states.on_release_branch,
                     versionflow.AlreadyReleasing),
+                bad(test_states.nothing_and_custom, versionflow.NoRepo),
                 bump_command(test_states.good_base_repo),
                 bump_command(test_states.on_master),
                 bump_command(test_states.with_feature),
