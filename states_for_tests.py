@@ -64,6 +64,13 @@ def _make_dirty(ctx):
 
 
 @ActionDecorator
+def _set_bumpversion_config(ctx):
+    # Use a non-standard BV config
+    assert not hasattr(ctx, "setup_cfg")
+    ctx.setup_cfg = "unusual_config"
+
+
+@ActionDecorator
 def _write_bumpversion(ctx):
     # Add bumpversion config
     if not hasattr(ctx, "setup_cfg"):
@@ -170,7 +177,6 @@ gitflow_with_dirty_bump = ("gitflow_with_dirty_bump" *
 gitflow_with_bump = ("gitflow_with_bump" *
                      (gitflow_with_dirty_bump | _commit_bumpversion))
 
-
 _add_bumpversion = (_write_bumpversion |
                     _stage_bumpversion | _commit_bumpversion)
 
@@ -185,6 +191,10 @@ good_dev_branch = ("good_dev_branch" *
 
 good_base_repo = ("good_base_repo" *
                   (good_dev_branch | _ff_master))
+
+good_custom_config = ("custom_bump" *
+                      (clean_gitflow | _set_bumpversion_config |
+                       _add_bumpversion | _set_good_tag))
 
 
 on_bad_master = "on_bad_master" * \

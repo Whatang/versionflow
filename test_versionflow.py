@@ -37,7 +37,7 @@ def profile():
 
 @attr.s
 class Result(object):
-    def check(self, testclass, result):
+    def check(self, testclass, result, ctx):
         raise NotImplementedError()
 
 
@@ -45,7 +45,7 @@ class Result(object):
 class ErrorResult(Result):
     error = attr.ib()
 
-    def check(self, testclass, result):
+    def check(self, testclass, result, ctx):
         try:
             testclass.assertIsInstance(result.exception, SystemExit)
             testclass.assertEqual(result.exit_code, 1)
@@ -68,7 +68,7 @@ class ErrorResult(Result):
 class Success(Result):
     version = attr.ib()
 
-    def check(self, testclass, result):
+    def check(self, testclass, result, ctx):
         try:
             testclass.assertEqual(result.exit_code, 0)
             # It is a git repo.
@@ -82,11 +82,11 @@ class Success(Result):
                     # Bumpversion version number present in git repo
                     # on develop branch
                     repo.heads.develop.checkout()
-                    testclass.assert_(os.path.exists(state.BV_CONFIG))
+                    testclass.assert_(os.path.exists(ctx.setup_cfg))
                     testclass.assert_(
-                        repo.active_branch.commit.tree / state.BV_CONFIG)
+                        repo.active_branch.commit.tree / ctx.setup_cfg)
                     bv = versionflow.BumpVersionWrapper.from_existing(
-                        state.BV_CONFIG)
+                        ctx.setup_cfg)
                     # - The version number is what we expect it to be.
                     testclass.assertEqual(bv.current_version, self.version)
                     # Check that the git version tag is present and is what we
@@ -134,9 +134,12 @@ class StateTest(object):
             name = self.state.__name__
         name = "test_" + prefix + "_" + name
         @self.state
-        def test_method(slf):
+        def test_method(slf, ctx):
+            if hasattr(ctx, "setup_cfg") and ctx.setup_cfg != test_states.BV_CONFIG:
+                slf.command_args = ["--config",
+                                    ctx.setup_cfg] + slf.command_args
             result = slf.process()
-            self.expected.check(slf, result)
+            self.expected.check(slf, result, ctx)
         return name, test_method
 
     @classmethod
