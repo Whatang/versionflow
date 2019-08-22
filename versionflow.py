@@ -339,7 +339,7 @@ class VersionFlowRepo(object):
             False,
             False,
             True,
-            tagging_info={})
+            tagging_info={"message": versions.new_version})
 
 
 def _do_version(config, level):
