@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import tempfile
+import inspect
 
 import attr
 
@@ -77,7 +78,7 @@ class ActionDecorator(object):
         def print_x(ctx):
             print(ctx.x)
 
-        x_chain = init_x | inc_x | inc_x | print_x
+        x_chain = init_x | inc_x | print_x
 
         @x_chain
         def my_func():
@@ -98,6 +99,8 @@ class ActionDecorator(object):
     post_action = attr.ib(init=False, default=None)
 
     def __call__(self, func):
+        arg_names = inspect.getargspec(func).args
+        takes_context = arg_names is not None and "ctx" in arg_names
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             ctx = type(
@@ -107,6 +110,8 @@ class ActionDecorator(object):
                 {})()
             self.action(ctx)
             try:
+                if takes_context:
+                    kwargs["ctx"] = ctx
                 return func(*args, **kwargs)
             finally:
                 if self.post_action is not None:
@@ -192,8 +197,10 @@ def handleRemoveReadonly(func, path, exc):
     if func in (os.rmdir, os.remove) and excvalue.errno == errno.EACCES:
         os.chmod(path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)  # 0777
         func(path)
+    elif not os.path.exists(path):
+        pass
     else:
-        raise
+        raise excvalue
 
 
 @mktempdir.after
