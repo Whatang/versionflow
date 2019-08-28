@@ -191,6 +191,7 @@ class BaseTest(unittest.TestCase):
         self.runner = click.testing.CliRunner()
 
     def process(self, *unused_args):
+        click.echo(self.command_args)
         return self.runner.invoke(versionflow.cli, self.command_args)
 
 
