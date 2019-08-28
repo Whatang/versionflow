@@ -86,17 +86,17 @@ This will install all the Python modules needed for developing versionflow.
 
 It is a good idea to create different testing virtual envs for versionflow as well as your dev environment. This will ensure that the package is configured to install properly via the configuration in `setup.cfg`, and that you don't have a hidden dependency on something installed in your dev environment.
 
-To install your working version of versionflow in a testing virtual env, activate it, then do
+To install your development version of versionflow in a testing virtual env, activate it, then do
 
     pip install -e .
 
-in your local copy of the versionflow repo.
+in your local copy of the versionflow repo. Now as you work on it your latest changes will always be available in the 
 
 ## Acknowledgements
 
 `versionflow` uses:
 
 * [setuptools_scm](https://pypi.org/project/setuptools-scm/) to find version numbers from commit tags;
-* [gitflow](https://pypi.org/project/gitflow/) to perform Git Flow actions;
+* [nu-gitflow](https://github.com/chassing/gitflow/) to perform Git Flow actions;
 * [bump2version](https://pypi.org/project/bump2version/) to increment version numbers;
 * and [gitpython](https://github.com/gitpython-developers/GitPython) to perform miscellaneous git actions.
