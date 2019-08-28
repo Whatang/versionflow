@@ -245,13 +245,13 @@ def _make_abs_path(unused_ctx, _, path):
     metavar="PATH",
     is_eager=True,
     callback=_set_curdir,
-    # TODO: add help
+    help = """Use the given PATH as the root of the versionflow repo. Defaults to the current directory.""",
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
 )
 @click.option(
     "--config",
     callback=_make_abs_path,
-    # TODO: add help
+    help="Use the given FILE as the versionflow configuration file. Defaults to .versionflow",
     type=click.Path(
         exists=False, file_okay=True, readable=True, writable=True, dir_okay=False
     ),
