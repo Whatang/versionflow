@@ -3,6 +3,7 @@
 	attrs==18.2.0
 	bump2version==0.5.10
 	gitpython==2.1.11
-	gitflow==0.5.1
+	nu-gitflow=1.0.2
 	pylint>=1.9.4
 	rope>=0.14.0
+	six>=1.12.0

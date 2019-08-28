@@ -1,19 +1,20 @@
-from action_decorator import ActionDecorator, mktempdir
-import versionflow
+from __future__ import print_function
 import gitflow.core
 import git
+from action_decorator import ActionDecorator, mktempdir
+import versionflow
 
-INITIAL_FILE = "initial_file"
-DIRTY_FILE = "dirty"
-GOOD_VERSION = "1.0.2"
-NEXT_PATCH = "1.0.3"
-NEXT_MINOR = "1.1.0"
-NEXT_MAJOR = "2.0.0"
-BAD_VERSION = "0.0.2"
+INITIAL_FILE = u"initial_file"
+DIRTY_FILE = u"dirty"
+GOOD_VERSION = u"1.0.2"
+NEXT_PATCH = u"1.0.3"
+NEXT_MINOR = u"1.1.0"
+NEXT_MAJOR = u"2.0.0"
+BAD_VERSION = u"0.0.2"
 
 
 @ActionDecorator
-def _do_nothing(ctx):
+def _do_nothing(unused_ctx):
     pass
 
 
@@ -34,7 +35,7 @@ def _close_git(ctx):
 def _do_initial_commit(ctx):
     assert not ctx.repo.is_dirty()
     with open(INITIAL_FILE, "w") as handle:
-        print >> handle, "initial"
+        print("initial", file=handle)
     ctx.repo.index.add([INITIAL_FILE])
     ctx.repo.index.commit("Initial commit")
 
@@ -59,7 +60,7 @@ def _close_gitflow(ctx):
 def _make_dirty(ctx):
     # Make a dirty repo
     with open(DIRTY_FILE, "w") as handle:
-        print >> handle, DIRTY_FILE
+        print(DIRTY_FILE, file=handle)
     ctx.repo.index.add([DIRTY_FILE])
 
 
@@ -82,8 +83,8 @@ def _write_bumpversion(ctx):
     # Add bumpversion config
     assert hasattr(ctx, "setup_cfg")
     with open(ctx.setup_cfg, "w") as handle:
-        print >> handle, "[bumpversion]"
-        print >> handle, "current_version=" + GOOD_VERSION
+        print("[bumpversion]", file=handle)
+        print("current_version=" + GOOD_VERSION, file=handle)
 
 
 @ActionDecorator
@@ -111,8 +112,7 @@ def _set_good_tag(ctx):
 
 @ActionDecorator
 def _ff_master(ctx):
-    ctx.repo.heads.master.set_commit(
-        'HEAD').commit = ctx.repo.heads.develop.commit
+    ctx.repo.heads.master.set_commit("HEAD").commit = ctx.repo.heads.develop.commit
 
 
 @ActionDecorator
@@ -155,11 +155,11 @@ def _set_feature_branch(ctx):
 # results in a new action c which is the composition of a then b,
 # and with c.__name__ = "name"
 
+# pylint:disable=invalid-name
 
 do_nothing = "nothing" * (mktempdir | _do_nothing)
 make_git = "make_git" * (mktempdir | _make_git)
-nothing_and_custom = "just_custom_set" * \
-    (mktempdir | _set_custom_bumpversion_config)
+nothing_and_custom = "just_custom_set" * (mktempdir | _set_custom_bumpversion_config)
 
 dirty_empty_git = "dirty_empty_git" * (make_git | _make_dirty)
 clean_git = "clean_git" * (make_git | _do_initial_commit)
@@ -170,48 +170,50 @@ dirty_empty_gitflow = "dirty_empty_gitflow" * (empty_gitflow | _make_dirty)
 clean_gitflow = "clean_gitflow" * (empty_gitflow | _do_initial_commit)
 dirty_gitflow = "dirty_gitflow" * (clean_gitflow | _make_dirty)
 
-just_bump = ("just_bump" *
-             (mktempdir | _set_standard_bumpversion_config | _write_bumpversion))
+just_bump = "just_bump" * (
+    mktempdir | _set_standard_bumpversion_config | _write_bumpversion
+)
 
-git_with_untracked_bump = (
-    "git_with_untracked_bump" * (make_git | _set_standard_bumpversion_config | _write_bumpversion))
-git_with_dirty_bump = ("git_with_dirty_bump" *
-                       (git_with_untracked_bump | _stage_bumpversion))
-git_with_bump = ("git_with_bump" *
-                 (git_with_dirty_bump | _commit_bumpversion))
+git_with_untracked_bump = "git_with_untracked_bump" * (
+    make_git | _set_standard_bumpversion_config | _write_bumpversion
+)
+git_with_dirty_bump = "git_with_dirty_bump" * (
+    git_with_untracked_bump | _stage_bumpversion
+)
+git_with_bump = "git_with_bump" * (git_with_dirty_bump | _commit_bumpversion)
 
-gitflow_with_untracked_bump = (
-    "gitflow_with_untracked_bump" * (clean_gitflow | _set_standard_bumpversion_config | _write_bumpversion))
-gitflow_with_dirty_bump = ("gitflow_with_dirty_bump" *
-                           (gitflow_with_untracked_bump | _stage_bumpversion))
-gitflow_with_bump = ("gitflow_with_bump" *
-                     (gitflow_with_dirty_bump | _commit_bumpversion))
+gitflow_with_untracked_bump = "gitflow_with_untracked_bump" * (
+    clean_gitflow | _set_standard_bumpversion_config | _write_bumpversion
+)
+gitflow_with_dirty_bump = "gitflow_with_dirty_bump" * (
+    gitflow_with_untracked_bump | _stage_bumpversion
+)
+gitflow_with_bump = "gitflow_with_bump" * (
+    gitflow_with_dirty_bump | _commit_bumpversion
+)
 
-_add_bumpversion = (_write_bumpversion |
-                    _stage_bumpversion | _commit_bumpversion)
+_add_bumpversion = _write_bumpversion | _stage_bumpversion | _commit_bumpversion
 
-empty_bad_tag_and_bump = ("empty_bad_tag_and_bump" *
-                          (empty_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag))
-bad_tag_and_bump = ("bad_tag_and_bump" *
-                    (clean_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag))
-
-
-good_dev_branch = ("good_dev_branch" *
-                   (gitflow_with_bump | _set_good_tag))
-
-good_base_repo = ("good_base_repo" *
-                  (good_dev_branch | _ff_master))
-
-good_custom_config = ("custom_bump" *
-                      (clean_gitflow | _set_custom_bumpversion_config |
-                       _add_bumpversion | _set_good_tag))
+empty_bad_tag_and_bump = "empty_bad_tag_and_bump" * (
+    empty_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag
+)
+bad_tag_and_bump = "bad_tag_and_bump" * (
+    clean_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag
+)
 
 
-on_bad_master = ("on_bad_master" *
-                 (good_dev_branch | _set_master_branch))
+good_dev_branch = "good_dev_branch" * (gitflow_with_bump | _set_good_tag)
+
+good_base_repo = "good_base_repo" * (good_dev_branch | _ff_master)
+
+good_custom_config = "custom_bump" * (
+    clean_gitflow | _set_custom_bumpversion_config | _add_bumpversion | _set_good_tag
+)
+
+
+on_bad_master = "on_bad_master" * (good_dev_branch | _set_master_branch)
 on_master = "on_master" * (good_base_repo | _set_master_branch)
 existing_release = "existing_release" * (good_base_repo | _make_release_branch)
-on_release_branch = ("on_release_branch" *
-                     (existing_release | _set_release_branch))
+on_release_branch = "on_release_branch" * (existing_release | _set_release_branch)
 with_feature = "with_feature" * (good_base_repo | _make_feature_branch)
 on_feature = "on_feature" * (with_feature | _set_feature_branch)

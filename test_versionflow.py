@@ -1,5 +1,4 @@
-import versionflow
-import test_states
+from __future__ import print_function
 import contextlib
 import cProfile
 import os
@@ -13,11 +12,15 @@ import click.testing
 import git.cmd
 import git
 
+import versionflow
+import test_states
+
 
 def with_breakpoint(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
+
     return wrapper
 
 
@@ -26,13 +29,13 @@ git.cmd.Git.clear_cache = with_breakpoint(git.cmd.Git.clear_cache)
 
 @contextlib.contextmanager
 def profile():
-    cp = cProfile.Profile()
-    cp.enable()
+    cprof = cProfile.Profile()
+    cprof.enable()
     try:
         yield
     finally:
-        cp.disable()
-        cp.print_stats("tottime")
+        cprof.disable()
+        cprof.print_stats("tottime")
 
 
 @attr.s
@@ -52,13 +55,11 @@ class ErrorResult(Result):
             expected_error = self.error
             if issubclass(expected_error, versionflow.VersionFlowError):
                 expected_error = expected_error()
-            testclass.assert_(
-                result.stdout.endswith(
-                    str(expected_error) +
-                    "\n" +
-                    "Aborted!\n"))
+            testclass.assertTrue(
+                result.stdout.endswith(str(expected_error) + "\n" + "Aborted!\n")
+            )
         except AssertionError:
-            print result.stdout
+            click.echo(result.stdout)
             if hasattr(result, "exc_info"):
                 traceback.print_exception(*result.exc_info)
             raise
@@ -72,28 +73,25 @@ class Success(Result):
         try:
             testclass.assertEqual(result.exit_code, 0)
             # It is a git repo.
-            testclass.assert_(os.path.exists(".git"))
+            testclass.assertTrue(os.path.exists(".git"))
             with versionflow.git_context() as repo:
                 # It is not dirty.
                 testclass.assertFalse(repo.is_dirty())
-                with versionflow.gitflow_context() as gf:
+                with versionflow.gitflow_context() as gflow:
                     # It is a gitflow repo.
-                    testclass.assert_(gf.is_initialized())
-                    setup_cfg = getattr(
-                        ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
+                    testclass.assertTrue(gflow.is_initialized())
+                    setup_cfg = getattr(ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
                     # Bumpversion version number present in git repo
                     # on develop branch
                     repo.heads.develop.checkout()
-                    testclass.assert_(os.path.exists(setup_cfg))
-                    testclass.assert_(
-                        repo.active_branch.commit.tree / setup_cfg)
-                    bv = versionflow.BumpVersionWrapper.from_existing(
-                        setup_cfg)
+                    testclass.assertTrue(os.path.exists(setup_cfg))
+                    testclass.assertTrue(repo.active_branch.commit.tree / setup_cfg)
+                    bumpver = versionflow.BumpVersionWrapper.from_existing(setup_cfg)
                     # - The version number is what we expect it to be.
-                    testclass.assertEqual(bv.current_version, self.version)
+                    testclass.assertEqual(bumpver.current_version, self.version)
                     # Check that the git version tag is present and is what we
                     # expect
-                    tag_version = versionflow.Config.get_last_version(gf)
+                    tag_version = versionflow.Config.get_last_version()
                     testclass.assertEqual(tag_version, self.version)
                     # TODO: The output is what we expect.
 
@@ -130,18 +128,22 @@ class StateTest(object):
     def bad(cls, state, error_class, name=None):
         return cls._make(state, error_class=error_class, name=name)
 
-    def _make_test_method(self, test_class, prefix):
+    def _make_test_method(self, unused_test_class, prefix):
         name = self.name
         if name is None:
             name = self.state.__name__
         name = "test_" + prefix + "_" + name
-        @self.state
-        def test_method(slf, ctx):
-            if hasattr(ctx, "setup_cfg") and ctx.setup_cfg != versionflow.DEFAULT_BV_FILE:
-                slf.command_args = ["--config",
-                                    ctx.setup_cfg] + slf.command_args
+
+        @self.state("context")
+        def test_method(slf, context):
+            if (
+                hasattr(context, "setup_cfg")
+                and context.setup_cfg != versionflow.DEFAULT_BV_FILE
+            ):
+                slf.command_args = ["--config", context.setup_cfg] + slf.command_args
             result = slf.process()
-            self.expected.check(slf, result, ctx)
+            self.expected.check(slf, result, context)
+
         return name, test_method
 
     @classmethod
@@ -162,19 +164,24 @@ class StateTest(object):
 bad = StateTest.bad
 
 
-def start(s): return StateTest.good(s, versionflow.START_VERSION)
+def start(state):
+    return StateTest.good(state, versionflow.START_VERSION)
 
 
-def good(s): return StateTest.good(s, test_states.GOOD_VERSION)
+def good(state):
+    return StateTest.good(state, test_states.GOOD_VERSION)
 
 
-def patch(s): return StateTest.good(s, test_states.NEXT_PATCH)
+def patch(state):
+    return StateTest.good(state, test_states.NEXT_PATCH)
 
 
-def minor(s): return StateTest.good(s, test_states.NEXT_MINOR)
+def minor(state):
+    return StateTest.good(state, test_states.NEXT_MINOR)
 
 
-def major(s): return StateTest.good(s, test_states.NEXT_MAJOR)
+def major(state):
+    return StateTest.good(state, test_states.NEXT_MAJOR)
 
 
 class BaseTest(unittest.TestCase):
@@ -183,10 +190,8 @@ class BaseTest(unittest.TestCase):
     def setUp(self):
         self.runner = click.testing.CliRunner()
 
-    def process(self, *args):
-        return self.runner.invoke(
-            versionflow.cli,
-            self.command_args)
+    def process(self, *unused_args):
+        return self.runner.invoke(versionflow.cli, self.command_args)
 
 
 _always_bad_states = [
@@ -197,16 +202,14 @@ _always_bad_states = [
     bad(test_states.git_with_dirty_bump, versionflow.DirtyRepo),
     bad(test_states.gitflow_with_dirty_bump, versionflow.DirtyRepo),
     bad(test_states.empty_bad_tag_and_bump, versionflow.BadVersionTags),
-    bad(test_states.bad_tag_and_bump, versionflow.BadVersionTags)
-
-
+    bad(test_states.bad_tag_and_bump, versionflow.BadVersionTags),
 ]
 
 
 @StateTest.make_tests
 class Test_Init(BaseTest):
     command_args = ["init"]
-    state_tests = (_always_bad_states + [
+    state_tests = _always_bad_states + [
         start(test_states.do_nothing),
         start(test_states.make_git),
         start(test_states.clean_git),
@@ -226,14 +229,14 @@ class Test_Init(BaseTest):
         good(test_states.on_release_branch),
         good(test_states.with_feature),
         good(test_states.on_feature),
-        good(test_states.good_custom_config)
-    ])
+        good(test_states.good_custom_config),
+    ]
 
 
 @StateTest.make_tests
 class Test_Check(BaseTest):
     command_args = ["check"]
-    state_tests = (_always_bad_states + [
+    state_tests = _always_bad_states + [
         bad(test_states.do_nothing, versionflow.NoRepo),
         bad(test_states.make_git, versionflow.NoGitFlow),
         bad(test_states.clean_git, versionflow.NoGitFlow),
@@ -253,24 +256,22 @@ class Test_Check(BaseTest):
         good(test_states.on_release_branch),
         good(test_states.with_feature),
         good(test_states.on_feature),
-        good(test_states.good_custom_config)
-    ])
+        good(test_states.good_custom_config),
+    ]
 
 
 def make_bump_tests(bump_command):
-    return (_always_bad_states +
-            [
-                bad(test_states.on_bad_master, versionflow.NoBumpVersion),
-                bad(test_states.existing_release, versionflow.AlreadyReleasing),
-                bad(test_states.on_release_branch,
-                    versionflow.AlreadyReleasing),
-                bad(test_states.nothing_and_custom, versionflow.NoRepo),
-                bump_command(test_states.good_base_repo),
-                bump_command(test_states.on_master),
-                bump_command(test_states.with_feature),
-                bump_command(test_states.on_feature),
-                bump_command(test_states.good_custom_config)
-            ])
+    return _always_bad_states + [
+        bad(test_states.on_bad_master, versionflow.NoBumpVersion),
+        bad(test_states.existing_release, versionflow.AlreadyReleasing),
+        bad(test_states.on_release_branch, versionflow.AlreadyReleasing),
+        bad(test_states.nothing_and_custom, versionflow.NoRepo),
+        bump_command(test_states.good_base_repo),
+        bump_command(test_states.on_master),
+        bump_command(test_states.with_feature),
+        bump_command(test_states.on_feature),
+        bump_command(test_states.good_custom_config),
+    ]
 
 
 @StateTest.make_tests

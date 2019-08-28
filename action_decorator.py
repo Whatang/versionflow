@@ -4,8 +4,8 @@ import os
 import shutil
 import stat
 import tempfile
-import inspect
 
+import six
 import attr
 
 
@@ -82,11 +82,11 @@ class ActionDecorator(object):
 
         @x_chain
         def my_func():
-            print "my_func"
+            print("my_func")
 
     Calling my_func() now results in:
 
-        1
+        2
         my_func
 
     Again, this *can* all be achieved with standard function decorators.
@@ -98,20 +98,25 @@ class ActionDecorator(object):
     # TODO: validate that attr is a function taking a single argument?
     post_action = attr.ib(init=False, default=None)
 
-    def __call__(self, func):
-        arg_names = inspect.getargspec(func).args
-        takes_context = arg_names is not None and "ctx" in arg_names
+
+    def __call__(self, context_arg):
+        if six.PY3:
+            takes_context = isinstance(context_arg, str)
+        else:
+            takes_context = isinstance(context_arg, basestring)
+        if takes_context:
+            return lambda func: self._make_decorator(func, context_arg)
+        else:
+            return self._make_decorator(context_arg, None)
+
+    def _make_decorator(self, func, context_arg):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            ctx = type(
-                self.action.__name__ +
-                '_ActionDecoratorContext',
-                (),
-                {})()
+            ctx = type(self.action.__name__ + "_ActionDecoratorContext", (), {})()
             self.action(ctx)
             try:
-                if takes_context:
-                    kwargs["ctx"] = ctx
+                if context_arg is not None:
+                    kwargs[context_arg] = ctx
                 return func(*args, **kwargs)
             finally:
                 if self.post_action is not None:
@@ -158,15 +163,15 @@ class ActionDecorator(object):
                                  ActionDecorators.
 
         """
+
         def then(ctx):
             self.action(ctx)
             other.action(ctx)
-        then.__name__ = (
-            self.action.__name__ +
-            "_then_" +
-            other.action.__name__)
+
+        then.__name__ = self.action.__name__ + "_then_" + other.action.__name__
         then = ActionDecorator(then)
         if other.post_action or self.post_action:
+
             def after(ctx):
                 try:
                     if other.post_action is not None:
@@ -174,12 +179,13 @@ class ActionDecorator(object):
                 finally:
                     if self.post_action is not None:
                         self.post_action(ctx)
+
             if other.post_action is None:
                 after_name = self.post_action.__name__
             else:
                 after_name = other.post_action.__name__
                 if self.post_action is not None:
-                    after_name += ("_then_" + self.post_action.__name__)
+                    after_name += "_then_" + self.post_action.__name__
             after.__name__ = after_name
             then.after(after)
         return then
@@ -192,9 +198,11 @@ def mktempdir(ctx):
     os.chdir(ctx.tmp_dir)
 
 
-def handleRemoveReadonly(func, path, exc):
+def handle_remove_readonly(func, path, exc):
     excvalue = exc[1]
-    if func in (os.rmdir, os.remove) and excvalue.errno == errno.EACCES:
+    if excvalue.errno == errno.EACCES:
+        # If it's an access error, perhaps the file is read-only. Let's change
+        # the permissions and try again.
         os.chmod(path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)  # 0777
         func(path)
     elif not os.path.exists(path):
@@ -206,7 +214,4 @@ def handleRemoveReadonly(func, path, exc):
 @mktempdir.after
 def remove_tmp_dir(ctx):
     os.chdir(ctx.orig_dir)
-    shutil.rmtree(
-        ctx.tmp_dir,
-        ignore_errors=False,
-        onerror=handleRemoveReadonly)
+    shutil.rmtree(ctx.tmp_dir, ignore_errors=False, onerror=handle_remove_readonly)

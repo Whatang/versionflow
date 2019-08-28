@@ -1,7 +1,8 @@
 import os
 import subprocess
-import ConfigParser
+import configparser
 from contextlib import contextmanager
+import six
 
 import attr
 import click
@@ -20,19 +21,19 @@ except LookupError:
         VERSION = pkg_resources.get_distribution("versionflow").version
     except pkg_resources.DistributionNotFound:
         # Not installed?
-        VERSION = "Unknown"
+        VERSION = u"Unknown"
 
-GITFLOW_RELEASE = "release"
-GITFLOW_HOTFIX = "hotfix"
-BV_PATCH = "patch"
-BV_MINOR = "minor"
-BV_MAJOR = "major"
-BV_SECTION = "bumpversion"
-BV_EXEC = "bumpversion"
-BV_CURRENT_VER_OPTION = "current_version"
-BV_NEW_VER_OPTION = "new_version"
-START_VERSION = "0.0.0"
-DEFAULT_BV_FILE = ".versionflow"
+GITFLOW_RELEASE = u"release"
+GITFLOW_HOTFIX = u"hotfix"
+BV_PATCH = u"patch"
+BV_MINOR = u"minor"
+BV_MAJOR = u"major"
+BV_SECTION = u"bumpversion"
+BV_EXEC = u"bumpversion"
+BV_CURRENT_VER_OPTION = u"current_version"
+BV_NEW_VER_OPTION = u"new_version"
+START_VERSION = u"0.0.0"
+DEFAULT_BV_FILE = u".versionflow"
 
 
 class VersionFlowError(Exception):
@@ -93,15 +94,15 @@ class GitError(VersionFlowError):
 
 @contextmanager
 def gitflow_context(*args, **kwargs):
-    gf = gitflow.core.GitFlow(*args, **kwargs)
+    gflow = gitflow.core.GitFlow(*args, **kwargs)
     try:
-        yield gf
+        yield gflow
     finally:
-        gf.repo.git.clear_cache()
-        gf.git.clear_cache()
-        gf.repo.close()
-        del gf.repo
-        del gf
+        gflow.repo.git.clear_cache()
+        gflow.git.clear_cache()
+        gflow.repo.close()
+        del gflow.repo
+        del gflow
 
 
 @contextmanager
@@ -151,33 +152,34 @@ class Config(object):
     @contextmanager
     def get_gitflow_context(self, create):
         click.echo("Checking if this is a git flow repo...")
-        with gitflow_context() as gf:
-            if gf.is_initialized():
+        with gitflow_context() as gflow:
+            if gflow.is_initialized():
                 click.echo("- Confirmed that this is a git flow repo")
             elif create:
                 click.echo("- Initialising a git flow repo...")
-                gf.init()
+                gflow.init()
                 click.echo("- Initialised this directory as a git flow repo")
             else:
                 raise NoGitFlow()
-            yield gf
+            yield gflow
 
     def check_bumpversion(self, create, repo):
         click.echo("Checking if bumpversion is initialised... ")
         try:
             # Check that the bumpversion config file is in the git repo
-            bv = BumpVersionWrapper.from_existing(self.bumpversion_config)
+            bv_wrap = BumpVersionWrapper.from_existing(self.bumpversion_config)
             relpath = os.path.relpath(self.bumpversion_config)
             repo.active_branch.commit.tree / relpath
         except BumpVersionWrapper.NoBumpversionConfig:
             if create:
-                bv = BumpVersionWrapper.initialize(self.bumpversion_config)
+                bv_wrap = BumpVersionWrapper.initialize(self.bumpversion_config)
                 click.echo(
-                    "- bumpversion initialised with current version set to " +
-                    bv.current_version)
+                    "- bumpversion initialised with current version set to "
+                    + bv_wrap.current_version
+                )
                 repo.index.add([self.bumpversion_config])
                 repo.index.commit("Add bumpversion config")
-                return bv
+                return bv_wrap
             else:
                 raise NoBumpVersion()
         except KeyError:
@@ -187,21 +189,20 @@ class Config(object):
                 repo.index.commit("Add bumpversion config")
             else:
                 raise BumpNotInGit()
-        click.echo(
-            "- bumpversion configured; version is at " +
-            bv.current_version)
-        return bv
+        click.echo("- bumpversion configured; version is at " + bv_wrap.current_version)
+        return bv_wrap
 
     @staticmethod
-    def get_last_version(gf_wrapper):
+    def get_last_version():
         # Try to get version number from repository
         def last_version(version):
-            if str(version.tag) == '0.0':
+            if str(version.tag) == "0.0":
                 raise LookupError()
             return version.format_with("{tag}")
+
         version = setuptools_scm.get_version(
-            version_scheme=last_version,
-            local_scheme=lambda v: "")
+            version_scheme=last_version, local_scheme=lambda v: ""
+        )
         return version
 
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
@@ -209,7 +210,7 @@ class Config(object):
         # correct as per the bumpversion section
         click.echo("Checking version in repository tags...")
         try:
-            version = self.get_last_version(gf_wrapper)
+            version = self.get_last_version()
             click.echo("- Last tagged version is " + version)
             # Check if the version tags match what we expect
             if version != bv_wrapper.current_version:
@@ -217,17 +218,13 @@ class Config(object):
         except LookupError:
             if create:
                 # set base version tags
-                click.echo(
-                    "- Base version tags set to " +
-                    bv_wrapper.current_version)
-                gf_wrapper.tag(
-                    bv_wrapper.current_version,
-                    gf_wrapper.repo.heads.master)
+                click.echo("- Base version tags set to " + bv_wrapper.current_version)
+                gf_wrapper.tag(bv_wrapper.current_version, gf_wrapper.repo.heads.master)
             else:
                 raise NoVersionTags()
 
 
-def _set_curdir(ctx, _, path):
+def _set_curdir(unused_ctx, _, path):
     if not path:
         path = os.path.abspath(os.curdir)
     else:
@@ -237,22 +234,29 @@ def _set_curdir(ctx, _, path):
     return path
 
 
-def _make_abs_path(ctx, _, path):
+def _make_abs_path(unused_ctx, _, path):
     return os.path.abspath(path)
 
 
 @click.version_option(version=VERSION)
 @click.group()
-@click.option('--repo-dir', metavar="PATH", is_eager=True,
-              callback=_set_curdir,
-              # TODO: add help
-              type=click.Path(exists=True, file_okay=False, dir_okay=True))
-@click.option('--config',
-              callback=_make_abs_path,
-              # TODO: add help
-              type=click.Path(exists=False, file_okay=True,
-                              readable=True, writable=True, dir_okay=False),
-              default=DEFAULT_BV_FILE)
+@click.option(
+    "--repo-dir",
+    metavar="PATH",
+    is_eager=True,
+    callback=_set_curdir,
+    # TODO: add help
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+)
+@click.option(
+    "--config",
+    callback=_make_abs_path,
+    # TODO: add help
+    type=click.Path(
+        exists=False, file_okay=True, readable=True, writable=True, dir_okay=False
+    ),
+    default=DEFAULT_BV_FILE,
+)
 @click.pass_context
 def cli(ctx, repo_dir, config):
     # Record configuration options
@@ -316,8 +320,12 @@ class VersionFlowRepo(object):
     @staticmethod
     def _git_failure(message, exc):
         click.echo(message, err=True)
-        click.echo("{command} returned status {status}".format(
-            command=exc.command, status=exc.status), err=True)
+        click.echo(
+            "{command} returned status {status}".format(
+                command=exc.command, status=exc.status
+            ),
+            err=True,
+        )
         click.echo(exc.stdout, err=True)
         click.echo(exc.stderr, err=True)
         raise GitError()
@@ -327,7 +335,9 @@ class VersionFlowRepo(object):
             self.gf_wrapper.create(
                 gitflow.branches.ReleaseBranchManager.identifier,
                 versions.new_version,
-                None, False)
+                None,
+                False,
+            )
         except gitflow.branches.BranchTypeExistsError:
             raise AlreadyReleasing()
 
@@ -339,13 +349,13 @@ class VersionFlowRepo(object):
             False,
             False,
             True,
-            tagging_info={"message": versions.new_version})
+            tagging_info={"message": versions.new_version},
+        )
 
 
 def _do_version(config, level):
     try:
-        with VersionFlowProcessor.from_config(config, level,
-                                              GITFLOW_RELEASE) as proc:
+        with VersionFlowProcessor.from_config(config, level, GITFLOW_RELEASE) as proc:
             proc.process()
     except VersionFlowError as exc:
         click.echo(str(exc), err=True)
@@ -376,23 +386,19 @@ def major(config):
 @attr.s
 class VersionFlowProcessor(object):
     vf_repo = attr.ib()
-    part = attr.ib(validator=attr.validators.in_(
-        [BV_PATCH, BV_MINOR, BV_MAJOR]))
-    flow_type = attr.ib(validator=attr.validators.in_(
-        [GITFLOW_RELEASE, GITFLOW_HOTFIX]))
+    part = attr.ib(validator=attr.validators.in_([BV_PATCH, BV_MINOR, BV_MAJOR]))
+    flow_type = attr.ib(
+        validator=attr.validators.in_([GITFLOW_RELEASE, GITFLOW_HOTFIX])
+    )
 
     @classmethod
     @contextmanager
     def from_config(cls, config, part, flow_type):
         with VersionFlowRepo.create_checked(config, False) as vf_repo:
-            yield cls(
-                vf_repo=vf_repo,
-                part=part,
-                flow_type=flow_type)
+            yield cls(vf_repo=vf_repo, part=part, flow_type=flow_type)
 
     def process(self):
-        versions = Versions.from_bumpversion(
-            self.vf_repo.bv_wrapper, self.part)
+        versions = Versions.from_bumpversion(self.vf_repo.bv_wrapper, self.part)
         self.vf_repo.process_action(versions, self.part)
 
 
@@ -407,25 +413,21 @@ class BumpVersionWrapper(object):
 
     @classmethod
     def from_existing(cls, bumpversion_config):
-        if (not os.path.exists(bumpversion_config)):
+        if not os.path.exists(bumpversion_config):
             raise cls.NoBumpversionConfig()
-        parsed_config = ConfigParser.ConfigParser()
+        parsed_config = configparser.ConfigParser()
         parsed_config.read(bumpversion_config)
         if not parsed_config.has_section(BV_SECTION):
             raise cls.NoBumpversionConfig()
         try:
-            current_version = parsed_config.get(
-                BV_SECTION, BV_CURRENT_VER_OPTION)
-        except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+            current_version = parsed_config.get(BV_SECTION, BV_CURRENT_VER_OPTION)
+        except (configparser.NoSectionError, configparser.NoOptionError):
             raise cls.NoBumpversionConfig()
-        return cls(
-            bumpversion_config,
-            parsed_config,
-            current_version)
+        return cls(bumpversion_config, parsed_config, current_version)
 
     @classmethod
     def initialize(cls, bumpversion_config):
-        config_parser = ConfigParser.ConfigParser()
+        config_parser = configparser.ConfigParser()
         if os.path.exists(bumpversion_config):
             config_parser.read(bumpversion_config)
         if not config_parser.has_section(BV_SECTION):
@@ -433,25 +435,19 @@ class BumpVersionWrapper(object):
         if not config_parser.has_option(BV_SECTION, BV_CURRENT_VER_OPTION):
             config_parser.set(BV_SECTION, BV_CURRENT_VER_OPTION, START_VERSION)
         config_parser.write(open(bumpversion_config, "w"))
-        return cls(
-            bumpversion_config,
-            config_parser,
-            START_VERSION)
+        return cls(bumpversion_config, config_parser, START_VERSION)
 
     def bump_and_commit(self, part):
         try:
-            self._run_bumpversion(
-                ["--commit", part])
+            self._run_bumpversion(["--commit", part])
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
-            click.echo(
-                "Failed to bump the version number in the release", err=True)
+            click.echo("Failed to bump the version number in the release", err=True)
             click.echo(exc.output, err=True)
             raise SetNextBumpVersionError()
 
     def get_new_version(self, part):
-        bv_output = self._run_bumpversion(
-            ["--list", part, "--dry-run"])
+        bv_output = self._run_bumpversion(["--list", part, "--dry-run"])
         new_version = None
         for line in bv_output.splitlines():
             if line.startswith(BV_NEW_VER_OPTION + "="):
@@ -463,10 +459,13 @@ class BumpVersionWrapper(object):
         return new_version
 
     def _run_bumpversion(self, bv_args, **subprocess_kw_args):
+        if six.PY3 and "encoding" not in subprocess_kw_args:
+            subprocess_kw_args["encoding"] = "utf-8"
         return subprocess.check_output(
             [BV_EXEC] + ["--config-file", self.config_file] + bv_args,
             stderr=subprocess.STDOUT,
-            **subprocess_kw_args)
+            **subprocess_kw_args
+        )
 
 
 @attr.s
@@ -478,9 +477,7 @@ class Versions(object):
     def from_bumpversion(cls, bv_wrapper, part):
         """Get the current and next version from bumpversion."""
         try:
-            return cls(
-                bv_wrapper.current_version,
-                bv_wrapper.get_new_version(part))
+            return cls(bv_wrapper.current_version, bv_wrapper.get_new_version(part))
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
             click.echo("Failed to get version numbers", err=True)
