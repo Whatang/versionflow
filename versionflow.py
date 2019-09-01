@@ -203,7 +203,7 @@ class Config(object):
         version = setuptools_scm.get_version(
             version_scheme=last_version, local_scheme=lambda v: ""
         )
-        click.echo(version)
+        click.echo("Last version : " + version)
         return version
 
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
@@ -420,7 +420,7 @@ class BumpVersionWrapper(object):
 
     @classmethod
     def from_existing(cls, bumpversion_config):
-        click.echo(bumpversion_config)
+        click.echo("BV config : " + bumpversion_config)
         if not os.path.exists(bumpversion_config):
             raise cls.NoBumpversionConfig()
         parsed_config = configparser.ConfigParser()
@@ -431,7 +431,7 @@ class BumpVersionWrapper(object):
             current_version = parsed_config.get(BV_SECTION, BV_CURRENT_VER_OPTION)
         except (configparser.NoSectionError, configparser.NoOptionError):
             raise cls.NoBumpversionConfig()
-        click.echo(current_version)
+        click.echo("Current version:" + current_version)
         return cls(bumpversion_config, parsed_config, current_version)
 
     @classmethod
