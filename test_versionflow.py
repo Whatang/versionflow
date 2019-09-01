@@ -83,21 +83,19 @@ class Success(Result):
                     # It is a gitflow repo.
                     testclass.assertTrue(gflow.is_initialized())
                     setup_cfg = getattr(ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
-                    # Bumpversion version number present in git repo
-                    # on develop branch
-                    repo.heads.develop.checkout()
-                    testclass.assertTrue(os.path.exists(setup_cfg))
-                    testclass.assertTrue(repo.active_branch.commit.tree / setup_cfg)
-                    click.echo("Hey")
-                    bumpver = versionflow.BumpVersionWrapper.from_existing(setup_cfg)
-                    # - The version number is what we expect it to be.
-                    testclass.assertEqual(bumpver.current_version, self.version)
-                    # Check that the git version tag is present and is what we
-                    # expect
-                    tag_version = versionflow.Config.get_last_version()
-                    testclass.assertEqual(tag_version, self.version)
-                    # TODO: The output is what we expect.
-
+                # Bumpversion version number present in git repo
+                # on develop branch
+                repo.heads.develop.checkout()
+                testclass.assertTrue(os.path.exists(setup_cfg))
+                testclass.assertTrue(repo.active_branch.commit.tree / setup_cfg)
+            bumpver = versionflow.BumpVersionWrapper.from_existing(setup_cfg)
+            # - The version number is what we expect it to be.
+            testclass.assertEqual(bumpver.current_version, self.version)
+            # Check that the git version tag is present and is what we
+            # expect
+            tag_version = versionflow.Config.get_last_version()
+            testclass.assertEqual(tag_version, self.version)
+            # TODO: The output is what we expect.
         except BaseException:
             print(result.stdout)
             if hasattr(result, "exc_info"):
