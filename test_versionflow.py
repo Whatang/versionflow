@@ -137,6 +137,18 @@ class StateTest(object):
 
         @self.state("context")
         def test_method(slf, context):
+            if hasattr(context, "gf_w0rapper"):
+                context.gf_wrapper.repo.git.clear_cache()
+                context.gf_wrapper.git.clear_cache()
+                context.gf_wrapper.repo.close()
+                del context.gf_wrapper.repo.git
+                del context.gf_wrapper.repo
+                del context.gf_wrapper
+            if hasattr(context, "repo"):
+                context.repo.git.clear_cache()
+                context.repo.close()
+                del context.repo.git
+                del context.repo
             if (
                 hasattr(context, "setup_cfg")
                 and context.setup_cfg != versionflow.DEFAULT_BV_FILE

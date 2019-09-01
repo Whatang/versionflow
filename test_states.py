@@ -25,10 +25,11 @@ def _make_git(ctx):
 
 @_make_git.after
 def _close_git(ctx):
-    ctx.repo.git.clear_cache()
-    ctx.repo.close()
-    del ctx.repo.git
-    del ctx.repo
+    if hasattr(ctx, "repo"):
+        ctx.repo.git.clear_cache()
+        ctx.repo.close()
+        del ctx.repo.git
+        del ctx.repo
 
 
 @ActionDecorator
@@ -48,12 +49,13 @@ def _init_gitflow(ctx):
 
 @_init_gitflow.after
 def _close_gitflow(ctx):
-    ctx.gf_wrapper.repo.git.clear_cache()
-    ctx.gf_wrapper.git.clear_cache()
-    ctx.gf_wrapper.repo.close()
-    del ctx.gf_wrapper.repo.git
-    del ctx.gf_wrapper.repo
-    del ctx.gf_wrapper
+    if hasattr(ctx, "gf_wrapper"):
+        ctx.gf_wrapper.repo.git.clear_cache()
+        ctx.gf_wrapper.git.clear_cache()
+        ctx.gf_wrapper.repo.close()
+        del ctx.gf_wrapper.repo.git
+        del ctx.gf_wrapper.repo
+        del ctx.gf_wrapper
 
 
 @ActionDecorator
