@@ -90,7 +90,7 @@ To install your development version of versionflow in a testing virtual env, act
 
     pip install -e .
 
-in your local copy of the versionflow repo. Now as you work on it your latest changes will always be available in the 
+in your local copy of the versionflow repo. Now as you work on it your latest changes will always be available in the virtual environment.
 
 ## Acknowledgements
 
