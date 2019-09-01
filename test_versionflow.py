@@ -137,7 +137,7 @@ class StateTest(object):
 
         @self.state("context")
         def test_method(slf, context):
-            if hasattr(context, "gf_w0rapper"):
+            if hasattr(context, "gf_wrapper"):
                 context.gf_wrapper.repo.git.clear_cache()
                 context.gf_wrapper.git.clear_cache()
                 context.gf_wrapper.repo.close()
