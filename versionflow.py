@@ -203,6 +203,7 @@ class Config(object):
         version = setuptools_scm.get_version(
             version_scheme=last_version, local_scheme=lambda v: ""
         )
+        click.echo(version)
         return version
 
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
@@ -245,7 +246,7 @@ def _make_abs_path(unused_ctx, _, path):
     metavar="PATH",
     is_eager=True,
     callback=_set_curdir,
-    help = """Use the given PATH as the root of the versionflow repo. Defaults to the current directory.""",
+    help="""Use the given PATH as the root of the versionflow repo. Defaults to the current directory.""",
     type=click.Path(exists=True, file_okay=False, dir_okay=True),
 )
 @click.option(
@@ -309,6 +310,7 @@ class VersionFlowRepo(object):
                 yield cls(config, gf_wrapper, bv_wrapper)
 
     def process_action(self, versions, part):
+        click.echo("Process action")
         try:
             self.gitflow_start(versions)
             self.bv_wrapper.bump_and_commit(part)
@@ -331,6 +333,7 @@ class VersionFlowRepo(object):
         raise GitError()
 
     def gitflow_start(self, versions):
+        click.echo("gitflow_start " + str(versions))
         try:
             self.gf_wrapper.create(
                 gitflow.branches.ReleaseBranchManager.identifier,
@@ -342,6 +345,7 @@ class VersionFlowRepo(object):
             raise AlreadyReleasing()
 
     def gitflow_end(self, versions):
+        click.echo("gitflow_end " + str(versions))
         self.gf_wrapper.finish(
             gitflow.branches.ReleaseBranchManager.identifier,
             versions.new_version,
@@ -354,6 +358,7 @@ class VersionFlowRepo(object):
 
 
 def _do_version(config, level):
+    click.echo("do_version")
     try:
         with VersionFlowProcessor.from_config(config, level, GITFLOW_RELEASE) as proc:
             proc.process()
@@ -373,6 +378,7 @@ def patch(config):
 @click.pass_obj
 def minor(config):
     """Create a release with the minor number bumped."""
+    click.echo("minor")
     _do_version(config, BV_MINOR)
 
 
@@ -398,6 +404,7 @@ class VersionFlowProcessor(object):
             yield cls(vf_repo=vf_repo, part=part, flow_type=flow_type)
 
     def process(self):
+        click.echo("Process")
         versions = Versions.from_bumpversion(self.vf_repo.bv_wrapper, self.part)
         self.vf_repo.process_action(versions, self.part)
 
@@ -413,6 +420,7 @@ class BumpVersionWrapper(object):
 
     @classmethod
     def from_existing(cls, bumpversion_config):
+        click.echo(bumpversion_config)
         if not os.path.exists(bumpversion_config):
             raise cls.NoBumpversionConfig()
         parsed_config = configparser.ConfigParser()
@@ -423,6 +431,7 @@ class BumpVersionWrapper(object):
             current_version = parsed_config.get(BV_SECTION, BV_CURRENT_VER_OPTION)
         except (configparser.NoSectionError, configparser.NoOptionError):
             raise cls.NoBumpversionConfig()
+        click.echo(current_version)
         return cls(bumpversion_config, parsed_config, current_version)
 
     @classmethod
@@ -438,6 +447,7 @@ class BumpVersionWrapper(object):
         return cls(bumpversion_config, config_parser, START_VERSION)
 
     def bump_and_commit(self, part):
+        click.echo("Bump and commit " + part)
         try:
             self._run_bumpversion(["--commit", part])
         except subprocess.CalledProcessError as exc:
@@ -461,6 +471,8 @@ class BumpVersionWrapper(object):
     def _run_bumpversion(self, bv_args, **subprocess_kw_args):
         if six.PY3 and "encoding" not in subprocess_kw_args:
             subprocess_kw_args["encoding"] = "utf-8"
+        click.echo([BV_EXEC] + ["--config-file", self.config_file] + bv_args)
+        click.echo(subprocess_kw_args)
         return subprocess.check_output(
             [BV_EXEC] + ["--config-file", self.config_file] + bv_args,
             stderr=subprocess.STDOUT,

@@ -70,6 +70,8 @@ class Success(Result):
     version = attr.ib()
 
     def check(self, testclass, result, ctx):
+        click.echo("Success check")
+        click.echo(ctx.__dict__)
         try:
             testclass.assertEqual(result.exit_code, 0)
             # It is a git repo.
@@ -86,6 +88,7 @@ class Success(Result):
                     repo.heads.develop.checkout()
                     testclass.assertTrue(os.path.exists(setup_cfg))
                     testclass.assertTrue(repo.active_branch.commit.tree / setup_cfg)
+                    click.echo("Hey")
                     bumpver = versionflow.BumpVersionWrapper.from_existing(setup_cfg)
                     # - The version number is what we expect it to be.
                     testclass.assertEqual(bumpver.current_version, self.version)
@@ -191,6 +194,7 @@ class BaseTest(unittest.TestCase):
         self.runner = click.testing.CliRunner()
 
     def process(self, *unused_args):
+        click.echo(unused_args)
         click.echo(self.command_args)
         return self.runner.invoke(versionflow.cli, self.command_args)
 

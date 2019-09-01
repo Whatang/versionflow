@@ -1,11 +1,11 @@
 language: python
 python:
-  - "2.7"
-  - "3.7"
+  - "2.7.16"
+  - "3.7.4"
 # command to install dependencies
 install:
-  - pip install -r dev_requirements.txt
+  - pip install pytest
   - pip install .
 # command to run tests
 script:
-  - pytest
+  - pytest test_versionflow.py::Test_Minor::test_Minor_custom_bump test_versionflow.py::Test_Major::test_Major_custom_bump
