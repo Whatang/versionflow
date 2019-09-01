@@ -203,6 +203,9 @@ class Config(object):
         version = setuptools_scm.get_version(
             version_scheme=last_version, local_scheme=lambda v: ""
         )
+        click.echo(
+            subprocess.check_output("git describe --dirty --tags --long --match *.*")
+        )
         click.echo("Last version : " + version)
         return version
 
