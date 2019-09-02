@@ -6,11 +6,11 @@ import six
 
 import attr
 import click
-import setuptools_scm
-import pkg_resources
 import git
 import gitflow.core
 import gitflow.branches
+import setuptools_scm
+import pkg_resources
 
 try:
     # Try to get version number from repository
@@ -203,10 +203,10 @@ class Config(object):
         version = setuptools_scm.get_version(
             version_scheme=last_version, local_scheme=lambda v: ""
         )
-        click.echo(
-            subprocess.check_output("git describe --dirty --tags --long --match *.*")
-        )
+        import git.cmd
+
         click.echo("Last version : " + version)
+        click.echo("From git: " + git.cmd.Git(".").describe("--tags"))
         return version
 
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
