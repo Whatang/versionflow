@@ -358,6 +358,9 @@ class VersionFlowRepo(object):
             True,
             tagging_info={"message": versions.new_version},
         )
+        # self.gf_wrapper.master().tag
+        self.gf_wrapper.repo.git.clear_cache()
+        self.gf_wrapper.git.clear_cache()
 
 
 def _do_version(config, level):
