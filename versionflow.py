@@ -210,14 +210,21 @@ class Config(object):
         try:
             version = self.get_last_version()
             click.echo("- Last tagged version is " + version)
+            # Check if this version is on the master branch
+            branches = gf_wrapper.repo.git.branch(
+                "--contains", "tags/" + version
+            ).splitlines()
+            branches = [b.lstrip("*").strip() for b in branches]
+            if "master" not in branches:
+                raise VersionTagOnWrongBranch()
             # Check if the version tags match what we expect
             if version != bv_wrapper.current_version:
                 raise BadVersionTags()
         except LookupError:
             if create:
                 # set base version tags
-                click.echo("- Base version tags set to " + bv_wrapper.current_version)
                 gf_wrapper.tag(bv_wrapper.current_version, gf_wrapper.repo.heads.master)
+                click.echo("- Base version tags set to " + bv_wrapper.current_version)
             else:
                 raise NoVersionTags()
 
