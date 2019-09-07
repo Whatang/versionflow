@@ -102,11 +102,7 @@ def gitflow_context(*args, **kwargs):
     try:
         yield gflow
     finally:
-        gflow.repo.git.clear_cache()
-        gflow.git.clear_cache()
         gflow.repo.close()
-        del gflow.repo
-        del gflow
 
 
 @contextmanager
@@ -115,9 +111,7 @@ def git_context(*args, **kwargs):
     try:
         yield repo
     finally:
-        repo.git.clear_cache()
         repo.close()
-        del repo
 
 
 @contextmanager
@@ -355,9 +349,6 @@ class VersionFlowRepo(object):
             True,
             tagging_info={"message": versions.new_version},
         )
-        # self.gf_wrapper.master().tag
-        self.gf_wrapper.repo.git.clear_cache()
-        self.gf_wrapper.git.clear_cache()
 
 
 def _do_version(config, level):
