@@ -98,7 +98,6 @@ class ActionDecorator(object):
     # TODO: validate that attr is a function taking a single argument?
     post_action = attr.ib(init=False, default=None)
 
-
     def __call__(self, context_arg):
         if six.PY3:
             takes_context = isinstance(context_arg, str)

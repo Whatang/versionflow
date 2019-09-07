@@ -1,7 +1,7 @@
 from __future__ import print_function
 import gitflow.core
 import git
-from action_decorator import ActionDecorator, mktempdir
+from action_decorator import ActionDecorator
 import versionflow
 
 INITIAL_FILE = u"initial_file"
@@ -26,9 +26,7 @@ def _make_git(ctx):
 @_make_git.after
 def _close_git(ctx):
     if hasattr(ctx, "repo"):
-        ctx.repo.git.clear_cache()
         ctx.repo.close()
-        del ctx.repo.git
         del ctx.repo
 
 
@@ -50,11 +48,7 @@ def _init_gitflow(ctx):
 @_init_gitflow.after
 def _close_gitflow(ctx):
     if hasattr(ctx, "gf_wrapper"):
-        ctx.gf_wrapper.repo.git.clear_cache()
-        ctx.gf_wrapper.git.clear_cache()
         ctx.gf_wrapper.repo.close()
-        del ctx.gf_wrapper.repo.git
-        del ctx.gf_wrapper.repo
         del ctx.gf_wrapper
 
 
@@ -101,6 +95,24 @@ def _commit_bumpversion(ctx):
 
 
 @ActionDecorator
+def _merge_dev(ctx):
+    repo = ctx.repo
+    old_branch = repo.active_branch
+    repo.heads.master.checkout()
+    repo.git.merge("--commit", "--no-ff", "-m", "'Merge dev into master'", "develop")
+    old_branch.checkout()
+
+
+@ActionDecorator
+def _merge_master(ctx):
+    repo = ctx.repo
+    old_branch = repo.active_branch
+    repo.heads.develop.checkout()
+    repo.git.merge("--commit", "--no-ff", "-m", "'Merge master into dev'", "master")
+    old_branch.checkout()
+
+
+@ActionDecorator
 def _set_bad_tag(ctx):
     # Add non-matching tag
     ctx.repo.create_tag(BAD_VERSION, ref=ctx.repo.active_branch)
@@ -120,6 +132,11 @@ def _ff_master(ctx):
 @ActionDecorator
 def _set_master_branch(ctx):
     ctx.repo.heads.master.checkout()
+
+
+@ActionDecorator
+def _set_develop_branch(ctx):
+    ctx.repo.heads.develop.checkout()
 
 
 @ActionDecorator
@@ -159,9 +176,9 @@ def _set_feature_branch(ctx):
 
 # pylint:disable=invalid-name
 
-do_nothing = "nothing" * (mktempdir | _do_nothing)
-make_git = "make_git" * (mktempdir | _make_git)
-nothing_and_custom = "just_custom_set" * (mktempdir | _set_custom_bumpversion_config)
+do_nothing = "nothing" * (_do_nothing)
+make_git = "make_git" * (_make_git)
+nothing_and_custom = "just_custom_set" * (_set_custom_bumpversion_config)
 
 dirty_empty_git = "dirty_empty_git" * (make_git | _make_dirty)
 clean_git = "clean_git" * (make_git | _do_initial_commit)
@@ -172,9 +189,7 @@ dirty_empty_gitflow = "dirty_empty_gitflow" * (empty_gitflow | _make_dirty)
 clean_gitflow = "clean_gitflow" * (empty_gitflow | _do_initial_commit)
 dirty_gitflow = "dirty_gitflow" * (clean_gitflow | _make_dirty)
 
-just_bump = "just_bump" * (
-    mktempdir | _set_standard_bumpversion_config | _write_bumpversion
-)
+just_bump = "just_bump" * (_set_standard_bumpversion_config | _write_bumpversion)
 
 git_with_untracked_bump = "git_with_untracked_bump" * (
     make_git | _set_standard_bumpversion_config | _write_bumpversion
@@ -196,24 +211,53 @@ gitflow_with_bump = "gitflow_with_bump" * (
 
 _add_bumpversion = _write_bumpversion | _stage_bumpversion | _commit_bumpversion
 
+_set_merged_tag = (
+    _merge_dev
+    | _set_master_branch
+    | _set_good_tag
+    | _set_develop_branch
+    | _merge_master
+)
+_set_merged_bad_tag = (
+    _merge_dev | _set_master_branch | _set_bad_tag | _set_develop_branch | _merge_master
+)
+
 empty_bad_tag_and_bump = "empty_bad_tag_and_bump" * (
-    empty_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag
+    empty_gitflow
+    | _set_standard_bumpversion_config
+    | _add_bumpversion
+    | _set_merged_bad_tag
 )
 bad_tag_and_bump = "bad_tag_and_bump" * (
-    clean_gitflow | _set_standard_bumpversion_config | _add_bumpversion | _set_bad_tag
+    clean_gitflow
+    | _set_standard_bumpversion_config
+    | _add_bumpversion
+    | _set_merged_bad_tag
 )
 
 
-good_dev_branch = "good_dev_branch" * (gitflow_with_bump | _set_good_tag)
+good_dev_branch = "good_dev_branch" * (gitflow_with_bump | _set_merged_tag)
 
 good_base_repo = "good_base_repo" * (good_dev_branch | _ff_master)
 
 good_custom_config = "custom_bump" * (
+    clean_gitflow
+    | _set_custom_bumpversion_config
+    | _add_bumpversion
+    | _merge_dev
+    | _set_master_branch
+    | _set_good_tag
+    | _set_develop_branch
+    | _merge_master
+)
+
+version_tag_on_wrong_branch = "version_tag_on_wrong_branch" * (
     clean_gitflow | _set_custom_bumpversion_config | _add_bumpversion | _set_good_tag
 )
 
-
-on_bad_master = "on_bad_master" * (good_dev_branch | _set_master_branch)
+on_bad_master = "on_bad_master" * (
+    gitflow_with_bump | _set_good_tag | _set_master_branch
+)
 on_master = "on_master" * (good_base_repo | _set_master_branch)
 existing_release = "existing_release" * (good_base_repo | _make_release_branch)
 on_release_branch = "on_release_branch" * (existing_release | _set_release_branch)

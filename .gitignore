@@ -2,3 +2,4 @@ versionflow.egg-info/
 *.pyc
 .vscode
 .eggs/
+*.swp

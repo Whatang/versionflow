@@ -9,3 +9,4 @@
 	rope==0.14.0
 	pytest>=4.6.5
 	configparser
+	pytest-xdist==1.29.0

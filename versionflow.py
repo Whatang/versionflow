@@ -84,6 +84,10 @@ class BadVersionTags(VersionFlowError):
     """Versions in bumpversion and git tags do not match."""
 
 
+class VersionTagOnWrongBranch(VersionFlowError):
+    """The last version tag is not on the master branch."""
+
+
 class AlreadyReleasing(VersionFlowError):
     """There is already a release in progress."""
 
@@ -98,11 +102,7 @@ def gitflow_context(*args, **kwargs):
     try:
         yield gflow
     finally:
-        gflow.repo.git.clear_cache()
-        gflow.git.clear_cache()
         gflow.repo.close()
-        del gflow.repo
-        del gflow
 
 
 @contextmanager
@@ -111,9 +111,7 @@ def git_context(*args, **kwargs):
     try:
         yield repo
     finally:
-        repo.git.clear_cache()
         repo.close()
-        del repo
 
 
 @contextmanager
@@ -203,10 +201,6 @@ class Config(object):
         version = setuptools_scm.get_version(
             version_scheme=last_version, local_scheme=lambda v: ""
         )
-        import git.cmd
-
-        click.echo("Last version : " + version)
-        click.echo("From git: " + git.cmd.Git(".").describe("--tags"))
         return version
 
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
@@ -216,14 +210,21 @@ class Config(object):
         try:
             version = self.get_last_version()
             click.echo("- Last tagged version is " + version)
+            # Check if this version is on the master branch
+            branches = gf_wrapper.repo.git.branch(
+                "--contains", "tags/" + version
+            ).splitlines()
+            branches = [b.lstrip("*").strip() for b in branches]
+            if "master" not in branches:
+                raise VersionTagOnWrongBranch()
             # Check if the version tags match what we expect
             if version != bv_wrapper.current_version:
                 raise BadVersionTags()
         except LookupError:
             if create:
                 # set base version tags
-                click.echo("- Base version tags set to " + bv_wrapper.current_version)
                 gf_wrapper.tag(bv_wrapper.current_version, gf_wrapper.repo.heads.master)
+                click.echo("- Base version tags set to " + bv_wrapper.current_version)
             else:
                 raise NoVersionTags()
 
@@ -313,7 +314,6 @@ class VersionFlowRepo(object):
                 yield cls(config, gf_wrapper, bv_wrapper)
 
     def process_action(self, versions, part):
-        click.echo("Process action")
         try:
             self.gitflow_start(versions)
             self.bv_wrapper.bump_and_commit(part)
@@ -336,7 +336,6 @@ class VersionFlowRepo(object):
         raise GitError()
 
     def gitflow_start(self, versions):
-        click.echo("gitflow_start " + str(versions))
         try:
             self.gf_wrapper.create(
                 gitflow.branches.ReleaseBranchManager.identifier,
@@ -348,7 +347,6 @@ class VersionFlowRepo(object):
             raise AlreadyReleasing()
 
     def gitflow_end(self, versions):
-        click.echo("gitflow_end " + str(versions))
         self.gf_wrapper.finish(
             gitflow.branches.ReleaseBranchManager.identifier,
             versions.new_version,
@@ -361,7 +359,6 @@ class VersionFlowRepo(object):
 
 
 def _do_version(config, level):
-    click.echo("do_version")
     try:
         with VersionFlowProcessor.from_config(config, level, GITFLOW_RELEASE) as proc:
             proc.process()
@@ -407,7 +404,6 @@ class VersionFlowProcessor(object):
             yield cls(vf_repo=vf_repo, part=part, flow_type=flow_type)
 
     def process(self):
-        click.echo("Process")
         versions = Versions.from_bumpversion(self.vf_repo.bv_wrapper, self.part)
         self.vf_repo.process_action(versions, self.part)
 
@@ -423,7 +419,6 @@ class BumpVersionWrapper(object):
 
     @classmethod
     def from_existing(cls, bumpversion_config):
-        click.echo("BV config : " + bumpversion_config)
         if not os.path.exists(bumpversion_config):
             raise cls.NoBumpversionConfig()
         parsed_config = configparser.ConfigParser()
@@ -434,7 +429,6 @@ class BumpVersionWrapper(object):
             current_version = parsed_config.get(BV_SECTION, BV_CURRENT_VER_OPTION)
         except (configparser.NoSectionError, configparser.NoOptionError):
             raise cls.NoBumpversionConfig()
-        click.echo("Current version:" + current_version)
         return cls(bumpversion_config, parsed_config, current_version)
 
     @classmethod
@@ -450,7 +444,6 @@ class BumpVersionWrapper(object):
         return cls(bumpversion_config, config_parser, START_VERSION)
 
     def bump_and_commit(self, part):
-        click.echo("Bump and commit " + part)
         try:
             self._run_bumpversion(["--commit", part])
         except subprocess.CalledProcessError as exc:
@@ -474,8 +467,6 @@ class BumpVersionWrapper(object):
     def _run_bumpversion(self, bv_args, **subprocess_kw_args):
         if six.PY3 and "encoding" not in subprocess_kw_args:
             subprocess_kw_args["encoding"] = "utf-8"
-        click.echo([BV_EXEC] + ["--config-file", self.config_file] + bv_args)
-        click.echo(subprocess_kw_args)
         return subprocess.check_output(
             [BV_EXEC] + ["--config-file", self.config_file] + bv_args,
             stderr=subprocess.STDOUT,
