@@ -14,17 +14,7 @@ import git
 
 import versionflow
 import test_states
-
-
-def with_breakpoint(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-git.cmd.Git.clear_cache = with_breakpoint(git.cmd.Git.clear_cache)
+import action_decorator
 
 
 @contextlib.contextmanager
@@ -49,20 +39,14 @@ class ErrorResult(Result):
     error = attr.ib()
 
     def check(self, testclass, result, ctx):
-        try:
-            testclass.assertIsInstance(result.exception, SystemExit)
-            testclass.assertEqual(result.exit_code, 1)
-            expected_error = self.error
-            if issubclass(expected_error, versionflow.VersionFlowError):
-                expected_error = expected_error()
-            testclass.assertTrue(
-                result.stdout.endswith(str(expected_error) + "\n" + "Aborted!\n")
-            )
-        except AssertionError:
-            click.echo(result.stdout)
-            if hasattr(result, "exc_info"):
-                traceback.print_exception(*result.exc_info)
-            raise
+        testclass.assertIsInstance(result.exception, SystemExit)
+        testclass.assertEqual(result.exit_code, 1)
+        expected_error = self.error
+        if issubclass(expected_error, versionflow.VersionFlowError):
+            expected_error = expected_error()
+        testclass.assertTrue(
+            result.stdout.endswith(str(expected_error) + "\n" + "Aborted!\n")
+        )
 
 
 @attr.s
@@ -70,37 +54,36 @@ class Success(Result):
     version = attr.ib()
 
     def check(self, testclass, result, ctx):
-        click.echo("Success check")
-        click.echo(ctx.__dict__)
-        try:
-            testclass.assertEqual(result.exit_code, 0)
-            # It is a git repo.
-            testclass.assertTrue(os.path.exists(".git"))
-            with versionflow.git_context() as repo:
-                # It is not dirty.
-                testclass.assertFalse(repo.is_dirty())
-                with versionflow.gitflow_context() as gflow:
-                    # It is a gitflow repo.
-                    testclass.assertTrue(gflow.is_initialized())
-                    setup_cfg = getattr(ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
-                # Bumpversion version number present in git repo
-                # on develop branch
-                repo.heads.develop.checkout()
-                testclass.assertTrue(os.path.exists(setup_cfg))
-                testclass.assertTrue(repo.active_branch.commit.tree / setup_cfg)
-            bumpver = versionflow.BumpVersionWrapper.from_existing(setup_cfg)
-            # - The version number is what we expect it to be.
-            testclass.assertEqual(bumpver.current_version, self.version)
-            # Check that the git version tag is present and is what we
-            # expect
-            tag_version = versionflow.Config.get_last_version()
-            testclass.assertEqual(tag_version, self.version)
-            # TODO: The output is what we expect.
-        except BaseException:
-            print(result.stdout)
-            if hasattr(result, "exc_info"):
-                traceback.print_exception(*result.exc_info)
-            raise
+        testclass.assertEqual(result.exit_code, 0)
+        # It is a git repo.
+        testclass.assertTrue(os.path.exists(".git"))
+        with versionflow.git_context() as repo:
+            # It is not dirty.
+            testclass.assertFalse(repo.is_dirty())
+            with versionflow.gitflow_context() as gflow:
+                # It is a gitflow repo.
+                testclass.assertTrue(gflow.is_initialized())
+                setup_cfg = getattr(ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
+            # Bumpversion version number present in git repo
+            # on develop branch
+            repo.heads.develop.checkout()
+            testclass.assertTrue(os.path.exists(setup_cfg))
+            testclass.assertTrue(repo.active_branch.commit.tree / setup_cfg)
+        bumpver = versionflow.BumpVersionWrapper.from_existing(setup_cfg)
+        # - The version number is what we expect it to be.
+        testclass.assertEqual(bumpver.current_version, self.version)
+        # Check that the git version tag is present and is what we
+        # expect
+        tag_version = versionflow.Config.get_last_version()
+        testclass.assertEqual(tag_version, self.version)
+        # TODO: The output is what we expect.
+        # Check that we are left with a consistent repo
+        if setup_cfg == versionflow.DEFAULT_BV_FILE:
+            testclass.runner.invoke(versionflow.cli, args=["check"])
+        else:
+            testclass.runner.invoke(
+                versionflow.cli, args=["--config", setup_cfg, "check"]
+            )
 
 
 @attr.s
@@ -137,27 +120,26 @@ class StateTest(object):
 
         @self.state("context")
         def test_method(slf, context):
-            if hasattr(context, "gf_wrapper"):
-                context.gf_wrapper.repo.git.clear_cache()
-                context.gf_wrapper.git.clear_cache()
-                context.gf_wrapper.repo.close()
-                del context.gf_wrapper.repo.git
-                del context.gf_wrapper.repo
-                del context.gf_wrapper
-            if hasattr(context, "repo"):
-                context.repo.git.clear_cache()
-                context.repo.close()
-                del context.repo.git
-                del context.repo
             if (
                 hasattr(context, "setup_cfg")
                 and context.setup_cfg != versionflow.DEFAULT_BV_FILE
             ):
                 slf.command_args = ["--config", context.setup_cfg] + slf.command_args
             result = slf.process()
-            self.expected.check(slf, result, context)
+            click.echo(result.stdout)
+            return result, context
 
-        return name, test_method
+        @action_decorator.mktempdir
+        def overall_test(slf):
+            result, context = test_method(slf)
+            try:
+                self.expected.check(slf, result, context)
+            except AssertionError as exc:
+                if hasattr(result, "exc_info"):
+                    traceback.print_exception(*result.exc_info)
+                raise
+
+        return name, overall_test
 
     @classmethod
     def make_tests(cls, testcase):
@@ -204,9 +186,7 @@ class BaseTest(unittest.TestCase):
         self.runner = click.testing.CliRunner()
 
     def process(self, *unused_args):
-        click.echo(unused_args)
-        click.echo(self.command_args)
-        return self.runner.invoke(versionflow.cli, self.command_args)
+        return self.runner.invoke(versionflow.cli, args=self.command_args)
 
 
 _always_bad_states = [
@@ -218,6 +198,7 @@ _always_bad_states = [
     bad(test_states.gitflow_with_dirty_bump, versionflow.DirtyRepo),
     bad(test_states.empty_bad_tag_and_bump, versionflow.BadVersionTags),
     bad(test_states.bad_tag_and_bump, versionflow.BadVersionTags),
+    bad(test_states.version_tag_on_wrong_branch, versionflow.VersionTagOnWrongBranch),
 ]
 
 

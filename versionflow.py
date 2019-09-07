@@ -84,6 +84,10 @@ class BadVersionTags(VersionFlowError):
     """Versions in bumpversion and git tags do not match."""
 
 
+class VersionTagOnWrongBranch(VersionFlowError):
+    """The last version tag is not on the master branch."""
+
+
 class AlreadyReleasing(VersionFlowError):
     """There is already a release in progress."""
 
