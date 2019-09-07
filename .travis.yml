@@ -8,4 +8,4 @@ install:
   - pip install .
 # command to run tests
 script:
-  - pytest test_versionflow.py::Test_Minor::test_Minor_custom_bump test_versionflow.py::Test_Major::test_Major_custom_bump test_versionflow.py::Test_Patch::test_Patch_custom_bump
+  - pytest
