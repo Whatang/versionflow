@@ -50,28 +50,28 @@ So now you'll have a nice, consistent repo: the master branch will contain your 
 
 ## Commands
 
-* **check**  
+* **check**
 Check whether this directory is correctly initialised for versionflow, and ready to bump a version number: is it a git repo; is the repo clean (i.e. not dirty); does it have the standard Git Flow branches; does it have a versionflow config file; does it have a semantic version tag on the `master` branch matching the versionflow config?
-* **init**  
+* **init**
 Initialise this directory as a versionflow project: create a git repo (if there isn't already one); set up the Git Flow branches (if they don't already exist); and create a versionflow config file (if it does not exist).
-* **major**  
+* **major**
 Create a release of this project from the latest commit on `development` with the major version number bumped.
-* **minor**  
+* **minor**
 Create a release of this project from the latest commit on `development` with the minor version number bumped.
-* **patch**  
+* **patch**
 Create a release of this project from the latest commit on `development` with the patch version number bumped.
 
 ### Common Options
 
 All the commands described above take the following options:
 
-* --repo-dir PATH  
+* --repo-dir PATH
 Use the given PATH as the root of the versionflow repo. Defaults to the current directory.
-* --config FILE  
+* --config FILE
 Use the given FILE as the versionflow configuration file. Defaults to `.versionflow`.
-* --version  
+* --version
 Print the current version of versionflow, and exit.
-* --help  
+* --help
 Print a help message
 
 ## Development
