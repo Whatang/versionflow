@@ -378,7 +378,6 @@ def patch(config):
 @click.pass_obj
 def minor(config):
     """Create a release with the minor number bumped."""
-    click.echo("minor")
     _do_version(config, BV_MINOR)
 
 
