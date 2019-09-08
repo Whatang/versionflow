@@ -1,0 +1,11 @@
+language: python
+python:
+  - "2.7.16"
+  - "3.7.4"
+# command to install dependencies
+install:
+  - pip install pytest
+  - pip install .
+# command to run tests
+script:
+  - pytest
