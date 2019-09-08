@@ -78,7 +78,7 @@ Print a help message
 
 To create an environment in which to develop `versionflow`, clone the git repository and create a Python virtual environment using virtualenv. Then in the cloned repo, using the virtual environment, do
 
-    pip -r dev_requirements.txt
+    pip -r requirements-dev.txt
 
 This will install all the Python modules needed for developing versionflow.
 
