@@ -161,7 +161,8 @@ class Config(object):
             repo.active_branch.commit.tree / relpath
         except BumpVersionWrapper.NoBumpversionConfig:
             if create:
-                bv_wrap = BumpVersionWrapper.initialize(self.bumpversion_config)
+                bv_wrap = BumpVersionWrapper.initialize(
+                    self.bumpversion_config)
                 click.echo(
                     "- bumpversion initialised with current version set to "
                     + bv_wrap.current_version
@@ -178,7 +179,8 @@ class Config(object):
                 repo.index.commit("Add bumpversion config")
             else:
                 raise BumpNotInGit()
-        click.echo("- bumpversion configured; version is at " + bv_wrap.current_version)
+        click.echo("- bumpversion configured; version is at " +
+                   bv_wrap.current_version)
         return bv_wrap
 
     @staticmethod
@@ -214,8 +216,10 @@ class Config(object):
         except LookupError:
             if create:
                 # set base version tags
-                gf_wrapper.tag(bv_wrapper.current_version, gf_wrapper.repo.heads.master)
-                click.echo("- Base version tags set to " + bv_wrapper.current_version)
+                gf_wrapper.tag(bv_wrapper.current_version,
+                               gf_wrapper.repo.heads.master)
+                click.echo("- Base version tags set to " +
+                           bv_wrapper.current_version)
             else:
                 raise NoVersionTags()
 
@@ -382,7 +386,8 @@ def major(config):
 @attr.s
 class VersionFlowProcessor(object):
     vf_repo = attr.ib()
-    part = attr.ib(validator=attr.validators.in_([BV_PATCH, BV_MINOR, BV_MAJOR]))
+    part = attr.ib(validator=attr.validators.in_(
+        [BV_PATCH, BV_MINOR, BV_MAJOR]))
     flow_type = attr.ib(
         validator=attr.validators.in_([GITFLOW_RELEASE, GITFLOW_HOTFIX])
     )
@@ -394,7 +399,8 @@ class VersionFlowProcessor(object):
             yield cls(vf_repo=vf_repo, part=part, flow_type=flow_type)
 
     def process(self):
-        versions = Versions.from_bumpversion(self.vf_repo.bv_wrapper, self.part)
+        versions = Versions.from_bumpversion(
+            self.vf_repo.bv_wrapper, self.part)
         self.vf_repo.process_action(versions, self.part)
 
 
@@ -416,7 +422,8 @@ class BumpVersionWrapper(object):
         if not parsed_config.has_section(BV_SECTION):
             raise cls.NoBumpversionConfig()
         try:
-            current_version = parsed_config.get(BV_SECTION, BV_CURRENT_VER_OPTION)
+            current_version = parsed_config.get(
+                BV_SECTION, BV_CURRENT_VER_OPTION)
         except (configparser.NoSectionError, configparser.NoOptionError):
             raise cls.NoBumpversionConfig()
         return cls(bumpversion_config, parsed_config, current_version)
@@ -438,7 +445,8 @@ class BumpVersionWrapper(object):
             self._run_bumpversion(["--commit", part])
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
-            click.echo("Failed to bump the version number in the release", err=True)
+            click.echo(
+                "Failed to bump the version number in the release", err=True)
             click.echo(exc.output, err=True)
             raise SetNextBumpVersionError()
 
