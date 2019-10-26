@@ -6,8 +6,8 @@ python:
   - "3.8"
 os:
   - linux
-  - windows
-  - osx
+  #- windows
+  #- osx
 install:
   - pip install pytest wheel
   - pip install .
