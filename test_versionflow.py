@@ -13,7 +13,7 @@ import git.cmd
 import git
 
 import versionflow
-import test_states
+import testing_state_definitions as test_states
 import action_decorator
 
 
@@ -63,7 +63,8 @@ class Success(Result):
             with versionflow.gitflow_context() as gflow:
                 # It is a gitflow repo.
                 testclass.assertTrue(gflow.is_initialized())
-                setup_cfg = getattr(ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
+                setup_cfg = getattr(
+                    ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
             # Bumpversion version number present in git repo
             # on develop branch
             repo.heads.develop.checkout()
@@ -124,7 +125,8 @@ class StateTest(object):
                 hasattr(context, "setup_cfg")
                 and context.setup_cfg != versionflow.DEFAULT_BV_FILE
             ):
-                slf.command_args = ["--config", context.setup_cfg] + slf.command_args
+                slf.command_args = ["--config",
+                                    context.setup_cfg] + slf.command_args
             result = slf.process()
             click.echo(result.stdout)
             return result, context
@@ -198,7 +200,8 @@ _always_bad_states = [
     bad(test_states.gitflow_with_dirty_bump, versionflow.DirtyRepo),
     bad(test_states.empty_bad_tag_and_bump, versionflow.BadVersionTags),
     bad(test_states.bad_tag_and_bump, versionflow.BadVersionTags),
-    bad(test_states.version_tag_on_wrong_branch, versionflow.VersionTagOnWrongBranch),
+    bad(test_states.version_tag_on_wrong_branch,
+        versionflow.VersionTagOnWrongBranch),
 ]
 
 
