@@ -12,16 +12,7 @@ import gitflow.branches
 import setuptools_scm
 import pkg_resources
 
-try:
-    # Try to get version number from repository
-    VERSION = setuptools_scm.get_version()
-except LookupError:
-    # Not in repo, so try to get version number from pkg_resources
-    try:
-        VERSION = pkg_resources.get_distribution("versionflow").version
-    except pkg_resources.DistributionNotFound:
-        # Not installed?
-        VERSION = u"Unknown"
+VERSION = "0.1.0"
 
 GITFLOW_RELEASE = u"release"
 GITFLOW_HOTFIX = u"hotfix"
