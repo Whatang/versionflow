@@ -3,3 +3,5 @@ versionflow.egg-info/
 .vscode
 .eggs/
 *.swp
+build/
+dist/
