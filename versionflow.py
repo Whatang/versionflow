@@ -186,15 +186,9 @@ class Config(object):
     @staticmethod
     def get_last_version():
         # Try to get version number from repository
-        def last_version(version):
-            if str(version.tag) == "0.0":
-                raise LookupError()
-            return version.format_with("{tag}")
-
-        version = setuptools_scm.get_version(
-            version_scheme=last_version, local_scheme=lambda v: ""
+        return setuptools_scm.get_version(
+            version_scheme=_last_version, local_scheme=lambda v: ""
         )
-        return version
 
     def check_version_tag(self, create, bv_wrapper, gf_wrapper):
         # Check that there is a version tag, and that it is
@@ -238,7 +232,51 @@ def _make_abs_path(unused_ctx, _, path):
     return os.path.abspath(path)
 
 
-@click.version_option(version=VERSION)
+def _last_version(version):
+    if str(version.tag) == "0.0":
+        raise LookupError()
+    return version.format_with("{tag}")
+
+
+def get_current_scm_version(target_dir=None):
+    try:
+        old = os.path.abspath(os.getcwd())
+        if target_dir is not None:
+            os.chdir(target_dir)
+        # Try to get version number from repository
+        return setuptools_scm.get_version(
+            version_scheme=_last_version, local_scheme="node-and-date"
+        )
+    finally:
+        os.chdir(old)
+
+
+def get_current_version(target_module, target_attribute="VERSION"):
+    """Return the current version string for a client program or repo.
+
+    `target_module` should be one which is in the root of the source
+    control system, and contains an attribute named `target_attribute`.
+
+    This will attempt to get a source control description of the current
+    commit, or if none is available - likely because the program isn't
+    being run from source control - will return the value of `target_attribute`
+    in `target_module`.
+    """
+    # First try to get a description from the source control system
+    if target_module is None:
+        target_file = os.path.abspath(__file__)
+        target_module = globals()
+    else:
+        target_file = os.path.abspath(target_module.__file__)
+    target_dir = os.path.dirname(target_file)
+    try:
+        return get_current_scm_version(target_dir)
+    except LookupError:
+        # If that didn't work, just get a description
+        return getattr(target_module, target_attribute)
+
+
+@click.version_option(version=get_current_version(None, "VERSION"))
 @click.group()
 @click.option(
     "--repo-dir",
@@ -270,6 +308,14 @@ def _do_status(config, create):
     except VersionFlowError as exc:
         click.echo(str(exc), err=True)
         raise click.Abort()
+
+
+@cli.command()
+@click.pass_context
+def describe(config):
+    """Give the source control description of the current version.
+    """
+    click.echo(get_current_scm_version())
 
 
 @cli.command()
