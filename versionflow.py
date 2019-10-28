@@ -243,6 +243,11 @@ def get_current_scm_version(target_dir=None):
         old = os.path.abspath(os.getcwd())
         if target_dir is not None:
             os.chdir(target_dir)
+        while not os.path.exists(".git"):
+            last_dir = os.getcwd()
+            os.chdir(os.path.pardir)
+            if os.getcwd() == last_dir:
+                break
         # Try to get version number from repository
         return setuptools_scm.get_version(
             version_scheme=_last_version, local_scheme="node-and-date"
@@ -262,7 +267,7 @@ def get_current_version(target_module, target_attribute="VERSION"):
     being run from source control - will return the value of `target_attribute`
     in `target_module`.
     """
-    # First try to get a description from the source control system
+    # First try to get a description from git
     if target_module is None:
         target_file = os.path.abspath(__file__)
     else:
