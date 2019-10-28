@@ -136,7 +136,7 @@ class StateTest(object):
             result, context = test_method(slf)
             try:
                 self.expected.check(slf, result, context)
-            except AssertionError as exc:
+            except AssertionError:
                 if hasattr(result, "exc_info"):
                     traceback.print_exception(*result.exc_info)
                 raise
