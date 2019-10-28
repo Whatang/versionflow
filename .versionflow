@@ -5,3 +5,5 @@ current_version = 0.3.6
 
 [bumpversion:file:versionflow.py]
 
+[bumpversion:file:README.md]
+
