@@ -14,23 +14,12 @@ install:
   - pip install .
 script:
   - pytest
-
-jobs:
-  include:
-    - stage: deploy
-      install: echo No install
-      script: echo No test
-      python: 3.8
-      deploy:
-        provider: pypi
-        user: __token__
-        password:
-          secure: O5MW3ii3oYOeNCaukIf6SGhgSMehDag0/UpLvb15dX1LxpvUSraY02N2RwxxPnvQDD3nwvnRZWtnKmPIvq3I93S1yEiNfHobxiJvr0Tm2lN5qre8jkQIh5JJG4yfcnmGTTM47Ixzz5NhtQRk9XKOFl3vgWTiLpmV2Rk38EAs62dq+opmte+nMlvRd1dh4rVECpUdrJkzaS7aqpeChKCqINbReJdo5FEknTLlZKSscLTua4NCRfJK7BIucoycpAujdb+eITsCjmOQOW/8YphsmxP2MJapbBLPxNcPJB+pCxWCvKZ+w/GwBI3n1nR/YPCZf6c0qglAI+y3t49D78Kk+rKLeRX2aJNKuQD4SLJmvz69eumEi6X+ZwMBVWw4oWQFmxFbj0bVOjuR9Vs7qrNHOhW92OzvLWf6ECOmEGfwxG68wFoTFx7zy9cIrPijm4yLx+PU78GA/bvuQzGTy3jXvV0FZZml9aCc5YPuynDUvKo6zUNojHoB+Yf5bEaRXbxmMZE2TfHZHeBeZ2CahjOT1wfyYbPG0ORExQyDfgzt1BoJFoLj51Wim+OHzCAeXG2dOv4RyY61lARs0gC9xyr/tljuxpnNmJ33kTn7KFxa0KXMOF2y+HLYzuUvsXb74Yh0EV3xoNgToKrdTRtn/bz6i4Uc7gKGfm2aFQUTrA9Mi8Q=
-        distributions: sdist bdist_wheel
-        skip_existing: true
-
-stages:
-  - name: test
-    if: branch = develop
-  - name: deploy
-    if: tag IS present
+deploy:
+  provider: pypi
+  user: __token__
+  password:
+    secure: O5MW3ii3oYOeNCaukIf6SGhgSMehDag0/UpLvb15dX1LxpvUSraY02N2RwxxPnvQDD3nwvnRZWtnKmPIvq3I93S1yEiNfHobxiJvr0Tm2lN5qre8jkQIh5JJG4yfcnmGTTM47Ixzz5NhtQRk9XKOFl3vgWTiLpmV2Rk38EAs62dq+opmte+nMlvRd1dh4rVECpUdrJkzaS7aqpeChKCqINbReJdo5FEknTLlZKSscLTua4NCRfJK7BIucoycpAujdb+eITsCjmOQOW/8YphsmxP2MJapbBLPxNcPJB+pCxWCvKZ+w/GwBI3n1nR/YPCZf6c0qglAI+y3t49D78Kk+rKLeRX2aJNKuQD4SLJmvz69eumEi6X+ZwMBVWw4oWQFmxFbj0bVOjuR9Vs7qrNHOhW92OzvLWf6ECOmEGfwxG68wFoTFx7zy9cIrPijm4yLx+PU78GA/bvuQzGTy3jXvV0FZZml9aCc5YPuynDUvKo6zUNojHoB+Yf5bEaRXbxmMZE2TfHZHeBeZ2CahjOT1wfyYbPG0ORExQyDfgzt1BoJFoLj51Wim+OHzCAeXG2dOv4RyY61lARs0gC9xyr/tljuxpnNmJ33kTn7KFxa0KXMOF2y+HLYzuUvsXb74Yh0EV3xoNgToKrdTRtn/bz6i4Uc7gKGfm2aFQUTrA9Mi8Q=
+  distributions: sdist bdist_wheel
+  skip_existing: true
+  on:
+    tags: true
