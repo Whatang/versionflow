@@ -119,7 +119,7 @@ class StateTest(object):
         name = "test_" + prefix + "_" + name
 
         @self.state("context")
-        def test_method(slf, context):
+        def test_method(slf, context=None):
             if (
                 hasattr(context, "setup_cfg")
                 and context.setup_cfg != versionflow.DEFAULT_BV_FILE
