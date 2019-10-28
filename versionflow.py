@@ -12,7 +12,7 @@ import gitflow.branches
 import setuptools_scm
 import pkg_resources
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 GITFLOW_RELEASE = u"release"
 GITFLOW_HOTFIX = u"hotfix"
