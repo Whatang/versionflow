@@ -12,7 +12,7 @@ import gitflow.branches
 import setuptools_scm
 import pkg_resources
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 GITFLOW_RELEASE = u"release"
 GITFLOW_HOTFIX = u"hotfix"
@@ -265,7 +265,6 @@ def get_current_version(target_module, target_attribute="VERSION"):
     # First try to get a description from the source control system
     if target_module is None:
         target_file = os.path.abspath(__file__)
-        target_module = globals()
     else:
         target_file = os.path.abspath(target_module.__file__)
     target_dir = os.path.dirname(target_file)
@@ -273,6 +272,8 @@ def get_current_version(target_module, target_attribute="VERSION"):
         return get_current_scm_version(target_dir)
     except LookupError:
         # If that didn't work, just get a description
+        if target_module is None:
+            return globals()[target_attribute]
         return getattr(target_module, target_attribute)
 
 
