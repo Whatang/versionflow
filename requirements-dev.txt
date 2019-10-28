@@ -11,3 +11,4 @@
 	configparser
 	pytest-xdist==1.29.0
 	pre-commit
+	autopep8

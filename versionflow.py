@@ -12,7 +12,7 @@ import gitflow.branches
 import setuptools_scm
 import pkg_resources
 
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 
 GITFLOW_RELEASE = u"release"
 GITFLOW_HOTFIX = u"hotfix"
@@ -161,7 +161,8 @@ class Config(object):
             repo.active_branch.commit.tree / relpath
         except BumpVersionWrapper.NoBumpversionConfig:
             if create:
-                bv_wrap = BumpVersionWrapper.initialize(self.bumpversion_config)
+                bv_wrap = BumpVersionWrapper.initialize(
+                    self.bumpversion_config)
                 click.echo(
                     "- bumpversion initialised with current version set to "
                     + bv_wrap.current_version
@@ -178,7 +179,8 @@ class Config(object):
                 repo.index.commit("Add bumpversion config")
             else:
                 raise BumpNotInGit()
-        click.echo("- bumpversion configured; version is at " + bv_wrap.current_version)
+        click.echo("- bumpversion configured; version is at " +
+                   bv_wrap.current_version)
         return bv_wrap
 
     @staticmethod
@@ -208,8 +210,10 @@ class Config(object):
         except LookupError:
             if create:
                 # set base version tags
-                gf_wrapper.tag(bv_wrapper.current_version, gf_wrapper.repo.heads.master)
-                click.echo("- Base version tags set to " + bv_wrapper.current_version)
+                gf_wrapper.tag(bv_wrapper.current_version,
+                               gf_wrapper.repo.heads.master)
+                click.echo("- Base version tags set to " +
+                           bv_wrapper.current_version)
             else:
                 raise NoVersionTags()
 
@@ -239,6 +243,11 @@ def get_current_scm_version(target_dir=None):
         old = os.path.abspath(os.getcwd())
         if target_dir is not None:
             os.chdir(target_dir)
+        while not os.path.exists(".git"):
+            last_dir = os.getcwd()
+            os.chdir(os.path.pardir)
+            if os.getcwd() == last_dir:
+                break
         # Try to get version number from repository
         return setuptools_scm.get_version(
             version_scheme=_last_version, local_scheme="node-and-date"
@@ -258,7 +267,7 @@ def get_current_version(target_module, target_attribute="VERSION"):
     being run from source control - will return the value of `target_attribute`
     in `target_module`.
     """
-    # First try to get a description from the source control system
+    # First try to get a description from git
     if target_module is None:
         target_file = os.path.abspath(__file__)
     else:
@@ -429,7 +438,8 @@ def major(config):
 @attr.s
 class VersionFlowProcessor(object):
     vf_repo = attr.ib()
-    part = attr.ib(validator=attr.validators.in_([BV_PATCH, BV_MINOR, BV_MAJOR]))
+    part = attr.ib(validator=attr.validators.in_(
+        [BV_PATCH, BV_MINOR, BV_MAJOR]))
     flow_type = attr.ib(
         validator=attr.validators.in_([GITFLOW_RELEASE, GITFLOW_HOTFIX])
     )
@@ -441,7 +451,8 @@ class VersionFlowProcessor(object):
             yield cls(vf_repo=vf_repo, part=part, flow_type=flow_type)
 
     def process(self):
-        versions = Versions.from_bumpversion(self.vf_repo.bv_wrapper, self.part)
+        versions = Versions.from_bumpversion(
+            self.vf_repo.bv_wrapper, self.part)
         self.vf_repo.process_action(versions, self.part)
 
 
@@ -463,7 +474,8 @@ class BumpVersionWrapper(object):
         if not parsed_config.has_section(BV_SECTION):
             raise cls.NoBumpversionConfig()
         try:
-            current_version = parsed_config.get(BV_SECTION, BV_CURRENT_VER_OPTION)
+            current_version = parsed_config.get(
+                BV_SECTION, BV_CURRENT_VER_OPTION)
         except (configparser.NoSectionError, configparser.NoOptionError):
             raise cls.NoBumpversionConfig()
         return cls(bumpversion_config, parsed_config, current_version)
@@ -485,7 +497,8 @@ class BumpVersionWrapper(object):
             self._run_bumpversion(["--commit", part])
         except subprocess.CalledProcessError as exc:
             # Handle bumpversion failures
-            click.echo("Failed to bump the version number in the release", err=True)
+            click.echo(
+                "Failed to bump the version number in the release", err=True)
             click.echo(exc.output, err=True)
             raise SetNextBumpVersionError()
 
