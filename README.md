@@ -20,7 +20,7 @@ To get started with a project, you need to initialise it to use Git and Git Flow
 
     versionflow init
 
-in youir project's root directory and `versionflow` will create a git repo, initialise it with Git Flow branches, create the config file, and tag the first (empty) commit as  "0.0.0".
+in youir project's root directory and `versionflow` will create a git repo, initialise it with Git Flow branches, create the config file, and tag the first (empty) commit as "0.0.0".
 
 Now we do some work and commit it to our development branch, and we're ready to create our first release! Let's first check that we're ready:
 
@@ -48,31 +48,61 @@ That's it! versionflow will do the same checks as above, and if everything is OK
 
 So now you'll have a nice, consistent repo: the master branch will contain your latest release, tagged to the appropriate version number.
 
+### Using the version number in code
+
+It's nice to have a version number in the tags of your repo which you can easily manage from the command line, but your code itself might want to make use of the same number. This is simple with versionflow - just write the current version number in any of your files, then `versionflow add` those files. From now on those files will be modified by `versionflow` whenever it updates the current version number. Any instances of the old version number in the specified files will be replaced by the new version number.
+
+For example, suppose we add a `README.md` file to the above example. In that file we put
+
+    # My awesome program v0.1.0
+
+    It's 1337!
+
+We don't want to have to manage that version number by hand. So we do
+
+    versionflow add `README.md`
+
+We do some more development and now we're ready to release v.0.2.0, so we run
+
+    versionflow minor
+
+Now `versionflow` will bump the version in both its own configuration _and_ the `README.md` file, merge the develop branch into master, and tag the resulting commit with "0.2.0". `README.md` now looks like this:
+
+    # My awesome program v0.2.0
+
+    It's 1337!
+
+We never have to worry about manually updating the version number in the README ever again. You can add as many files as you want to `versionflow` and it will update the version number in all of them.
+
 ## Commands
 
-* **check**
-Check whether this directory is correctly initialised for versionflow, and ready to bump a version number: is it a git repo; is the repo clean (i.e. not dirty); does it have the standard Git Flow branches; does it have a versionflow config file; does it have a semantic version tag on the `master` branch matching the versionflow config?
-* **init**
-Initialise this directory as a versionflow project: create a git repo (if there isn't already one); set up the Git Flow branches (if they don't already exist); and create a versionflow config file (if it does not exist).
-* **major**
-Create a release of this project from the latest commit on `development` with the major version number bumped.
-* **minor**
-Create a release of this project from the latest commit on `development` with the minor version number bumped.
-* **patch**
-Create a release of this project from the latest commit on `development` with the patch version number bumped.
+- **check**
+  Check whether this directory is correctly initialised for versionflow, and ready to bump a version number: is it a git repo; is the repo clean (i.e. not dirty); does it have the standard Git Flow branches; does it have a versionflow config file; does it have a semantic version tag on the `master` branch matching the versionflow config?
+- **init**
+  Initialise this directory as a versionflow project: create a git repo (if there isn't already one); set up the Git Flow branches (if they don't already exist); and create a versionflow config file (if it does not exist).
+- **major**
+  Create a release of this project from the latest commit on `development` with the major version number bumped.
+- **minor**
+  Create a release of this project from the latest commit on `development` with the minor version number bumped.
+- **patch**
+  Create a release of this project from the latest commit on `development` with the patch version number bumped.
+- **describe**
+  Show just the current version number in the repo, including a description of the current/parent commit if it is untagged.
+- **add**
+  Add a file to `versionflow`.
 
 ### Common Options
 
 All the commands described above take the following options:
 
-* --repo-dir PATH
-Use the given PATH as the root of the versionflow repo. Defaults to the current directory.
-* --config FILE
-Use the given FILE as the versionflow configuration file. Defaults to `.versionflow`.
-* --version
-Print the current version of versionflow, and exit.
-* --help
-Print a help message
+- --repo-dir PATH
+  Use the given PATH as the root of the versionflow repo. Defaults to the current directory.
+- --config FILE
+  Use the given FILE as the versionflow configuration file. Defaults to `.versionflow`.
+- --version
+  Print the current version of versionflow, and exit.
+- --help
+  Print a help message
 
 ## Development
 
@@ -96,7 +126,7 @@ in your local copy of the versionflow repo. Now as you work on it your latest ch
 
 `versionflow` uses:
 
-* [setuptools_scm](https://pypi.org/project/setuptools-scm/) to find version numbers from commit tags;
-* [nu-gitflow](https://github.com/chassing/gitflow/) to perform Git Flow actions;
-* [bump2version](https://pypi.org/project/bump2version/) to increment version numbers;
-* and [gitpython](https://github.com/gitpython-developers/GitPython) to perform miscellaneous git actions.
+- [setuptools_scm](https://pypi.org/project/setuptools-scm/) to find version numbers from commit tags;
+- [nu-gitflow](https://github.com/chassing/gitflow/) to perform Git Flow actions;
+- [bump2version](https://pypi.org/project/bump2version/) to increment version numbers in files;
+- and [gitpython](https://github.com/gitpython-developers/GitPython) to perform miscellaneous git actions.
