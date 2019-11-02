@@ -12,7 +12,7 @@ import gitflow.branches
 import setuptools_scm
 import pkg_resources
 
-VERSION = "0.3.6"
+VERSION = "0.4.0"
 
 GITFLOW_RELEASE = u"release"
 GITFLOW_HOTFIX = u"hotfix"
@@ -152,11 +152,14 @@ class Config(object):
                 raise NoGitFlow()
             yield gflow
 
+    def bv_wrapper(self):
+        return BumpVersionWrapper.from_existing(self.bumpversion_config)
+
     def check_bumpversion(self, create, repo):
         click.echo("Checking if bumpversion is initialised... ")
         try:
             # Check that the bumpversion config file is in the git repo
-            bv_wrap = BumpVersionWrapper.from_existing(self.bumpversion_config)
+            bv_wrap = self.bv_wrapper()
             relpath = os.path.relpath(self.bumpversion_config)
             repo.active_branch.commit.tree / relpath
         except BumpVersionWrapper.NoBumpversionConfig:
@@ -336,6 +339,26 @@ def init(config):
 def check(config):
     """Check if the repo state of this package is OK."""
     _do_status(config, False)
+
+
+@cli.command()
+@click.pass_obj
+@click.argument("filename", type=click.Path(exists=True, file_okay=True, dir_okay=False))
+def add(config, filename):
+    """Add a file containing a version number to be updated by versionflow.
+
+    This options records that the given file contains a version number. After
+    this file has been "add"ed to versionflow, the version number in it will be
+    automatically updated any time versionflow changes the version number for
+    this repository.
+    """
+    _add_file(config, filename)
+
+
+def _add_file(config, filename):
+    filename = os.path.relpath(filename, config.repo_dir)
+    bv_wrapper = config.bv_wrapper()
+    bv_wrapper.add_file(filename)
 
 
 @attr.s
@@ -522,6 +545,11 @@ class BumpVersionWrapper(object):
             stderr=subprocess.STDOUT,
             **subprocess_kw_args
         )
+
+    def add_file(self, filename):
+        new_section = ":".join([BV_SECTION, "file", filename])
+        self.parsed_config.add_section(new_section)
+        self.parsed_config.write(open(self.config_file, "w"))
 
 
 @attr.s

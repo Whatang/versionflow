@@ -63,7 +63,8 @@ class Success(Result):
             with versionflow.gitflow_context() as gflow:
                 # It is a gitflow repo.
                 testclass.assertTrue(gflow.is_initialized())
-                setup_cfg = getattr(ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
+                setup_cfg = getattr(
+                    ctx, "setup_cfg", versionflow.DEFAULT_BV_FILE)
             # Bumpversion version number present in git repo
             # on develop branch
             repo.heads.develop.checkout()
@@ -119,12 +120,13 @@ class StateTest(object):
         name = "test_" + prefix + "_" + name
 
         @self.state("context")
-        def test_method(slf, context):
+        def test_method(slf, context=None):
             if (
                 hasattr(context, "setup_cfg")
                 and context.setup_cfg != versionflow.DEFAULT_BV_FILE
             ):
-                slf.command_args = ["--config", context.setup_cfg] + slf.command_args
+                slf.command_args = ["--config",
+                                    context.setup_cfg] + slf.command_args
             result = slf.process()
             click.echo(result.stdout)
             return result, context
@@ -134,7 +136,7 @@ class StateTest(object):
             result, context = test_method(slf)
             try:
                 self.expected.check(slf, result, context)
-            except AssertionError as exc:
+            except AssertionError:
                 if hasattr(result, "exc_info"):
                     traceback.print_exception(*result.exc_info)
                 raise
@@ -198,7 +200,8 @@ _always_bad_states = [
     bad(test_states.gitflow_with_dirty_bump, versionflow.DirtyRepo),
     bad(test_states.empty_bad_tag_and_bump, versionflow.BadVersionTags),
     bad(test_states.bad_tag_and_bump, versionflow.BadVersionTags),
-    bad(test_states.version_tag_on_wrong_branch, versionflow.VersionTagOnWrongBranch),
+    bad(test_states.version_tag_on_wrong_branch,
+        versionflow.VersionTagOnWrongBranch),
 ]
 
 
