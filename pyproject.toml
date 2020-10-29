@@ -2,8 +2,11 @@
 name = "versionflow"
 version = "0.4.0"
 description = "Automatic Semantic Versioning with Git Flow"
-authors = ["Mike Thomas"]
+readme = "README.md"
+authors = ["Mike Thomas <versionflow@whatang.org>"]
 license = "GPLv3"
+repository = "https://github.com/Whatang/versionflow"
+keywords = ["versioning"]
 
 [tool.poetry.dependencies]
 python = ">=3.6.1,<4.0"
