@@ -1,4 +1,4 @@
-# versionflow 0.3.6
+# versionflow 0.4.0
 
 Automatic Semantic Versioning with Git Flow.
 

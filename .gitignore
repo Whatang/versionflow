@@ -5,3 +5,4 @@ versionflow.egg-info/
 *.swp
 build/
 dist/
+.idea

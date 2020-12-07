@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "versionflow"
+version = "0.4.0"
+description = "Automatic Semantic Versioning with Git Flow"
+readme = "README.md"
+authors = ["Mike Thomas <versionflow@whatang.org>"]
+license = "GPLv3"
+repository = "https://github.com/Whatang/versionflow"
+keywords = ["versioning"]
+
+[tool.poetry.dependencies]
+python = ">=3.6.1,<4.0"
+click = "^7.1.2"
+attrs = "^20.2.0"
+bump2version = "^1.0.1"
+nu-gitflow = "^1.0.2"
+six = "^1.15.0"
+setuptools-scm = "^4.1.2"
+configparser = "^5.0.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.1.2"
+pre-commit = "^2.8.1"
+
+[tool.poetry.scripts]
+versionflow = 'versionflow:cli'
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
